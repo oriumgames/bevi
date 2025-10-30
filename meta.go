@@ -156,7 +156,7 @@ func (a SystemMeta) toInternal() scheduler.SystemMeta {
 	}
 }
 
-// baseType returns the base type, removing pointer indirection.
+// baseType returns the non-pointer base reflect.Type and is the canonical helper for this package.
 func baseType(t reflect.Type) reflect.Type {
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()

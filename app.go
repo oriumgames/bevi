@@ -8,19 +8,23 @@ import (
 	"syscall"
 
 	"github.com/mlange-42/ark/ecs"
+	"github.com/oriumgames/bevi/internal/event"
 	"github.com/oriumgames/bevi/internal/scheduler"
 )
 
 type App struct {
-	world *ecs.World
-	sched *scheduler.Scheduler
+	world  *ecs.World
+	sched  *scheduler.Scheduler
+	events *event.Bus
 }
 
 func NewApp() *App {
 	w := ecs.NewWorld()
+	bus := event.NewBus()
 	return &App{
-		world: &w,
-		sched: scheduler.NewScheduler(),
+		world:  &w,
+		sched:  scheduler.NewScheduler(),
+		events: bus,
 	}
 }
 
@@ -65,16 +69,25 @@ func (a *App) Run() {
 	}()
 
 	a.sched.RunStage(ctx, scheduler.Stage(Startup), a.world, nil)
+	// Flip buffers after Startup so the first Update sees events produced during Startup
+	a.events.Advance()
 	for {
 		if ctx.Err() != nil {
 			return
 		}
 		a.sched.RunStage(ctx, scheduler.Stage(Update), a.world, nil)
+		// Complete events with no readers, then flip after each Update frame
+		a.events.CompleteNoReader()
+		a.events.Advance()
 	}
 }
 
 func (a *App) World() *ecs.World {
 	return a.world
+}
+
+func (a *App) Events() *event.Bus {
+	return a.events
 }
 
 type Plugin interface {
