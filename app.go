@@ -16,6 +16,7 @@ type App struct {
 	world  *ecs.World
 	sched  *scheduler.Scheduler
 	events *event.Bus
+	diag   *internalDiagnostics
 }
 
 func NewApp() *App {
@@ -25,6 +26,9 @@ func NewApp() *App {
 		world:  &w,
 		sched:  scheduler.NewScheduler(),
 		events: bus,
+		diag: &internalDiagnostics{
+			d: NopDiagnostics{},
+		},
 	}
 }
 
@@ -82,7 +86,7 @@ func (a *App) Run() {
 }
 
 func (a *App) runStage(ctx context.Context, stage Stage) {
-	a.sched.RunStage(ctx, scheduler.Stage(stage), a.world, nil)
+	a.sched.RunStage(ctx, scheduler.Stage(stage), a.world, a.diag)
 	a.events.CompleteNoReader()
 	a.events.Advance()
 }
