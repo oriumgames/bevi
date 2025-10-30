@@ -37,12 +37,12 @@ type AccessMeta struct {
 	eventWritesSet map[reflect.Type]struct{}
 
 	// Compact bitset representation using a global TypeIndex
-	readsBits       *bitset
-	writesBits      *bitset
-	resReadsBits    *bitset
-	resWritesBits   *bitset
-	eventReadsBits  *bitset
-	eventWritesBits *bitset
+	readsBits       *BitSet
+	writesBits      *BitSet
+	resReadsBits    *BitSet
+	resWritesBits   *BitSet
+	eventReadsBits  *BitSet
+	eventWritesBits *BitSet
 }
 
 // PrepareSets precomputes lookup sets from the slice fields for faster conflict checks.
@@ -67,14 +67,14 @@ func (a *AccessMeta) PrepareSets() {
 	build(&a.eventWritesSet, a.EventWrites)
 
 	// Build compact bitsets
-	buildBits := func(src []reflect.Type) *bitset {
+	buildBits := func(src []reflect.Type) *BitSet {
 		if len(src) == 0 {
 			return nil
 		}
-		b := &bitset{}
+		b := &BitSet{}
 		for _, t := range src {
 			idx := globalTypeIndex.indexOf(t)
-			b.set(idx)
+			b.Set(idx)
 		}
 		return b
 	}
@@ -147,39 +147,4 @@ func (ti *typeIndex) indexOf(t reflect.Type) int {
 	idx := len(ti.m)
 	ti.m[t] = idx
 	return idx
-}
-
-// Minimal bitset for compact membership and fast intersection checks.
-type bitset struct {
-	words []uint64
-}
-
-func (b *bitset) set(i int) {
-	if i < 0 {
-		return
-	}
-	w := i >> 6
-	off := uint(i & 63)
-	if w >= len(b.words) {
-		nw := make([]uint64, w+1)
-		copy(nw, b.words)
-		b.words = nw
-	}
-	b.words[w] |= 1 << off
-}
-
-func (b *bitset) anyIntersect(other *bitset) bool {
-	if b == nil || other == nil {
-		return false
-	}
-	n := len(b.words)
-	if len(other.words) < n {
-		n = len(other.words)
-	}
-	for i := 0; i < n; i++ {
-		if (b.words[i] & other.words[i]) != 0 {
-			return true
-		}
-	}
-	return false
 }

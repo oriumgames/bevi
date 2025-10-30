@@ -2,7 +2,6 @@ package bevi
 
 import (
 	"reflect"
-	"slices"
 	"time"
 
 	"github.com/oriumgames/bevi/internal/scheduler"
@@ -74,56 +73,6 @@ func MergeAccess(dst, src *AccessMeta) {
 	dst.ResWrites = append(dst.ResWrites, src.ResWrites...)
 	dst.EventReads = append(dst.EventReads, src.EventReads...)
 	dst.EventWrites = append(dst.EventWrites, src.EventWrites...)
-}
-
-// Conflicts returns true if this access conflicts with another.
-func (a AccessMeta) Conflicts(other AccessMeta) bool {
-	// Write vs read/write conflicts for components
-	for _, w := range a.Writes {
-		if slices.Contains(other.Reads, w) {
-			return true
-		}
-		if slices.Contains(other.Writes, w) {
-			return true
-		}
-	}
-	for _, r := range a.Reads {
-		if slices.Contains(other.Writes, r) {
-			return true
-		}
-	}
-
-	// Write vs read/write conflicts for resources
-	for _, w := range a.ResWrites {
-		if slices.Contains(other.ResReads, w) {
-			return true
-		}
-		if slices.Contains(other.ResWrites, w) {
-			return true
-		}
-	}
-	for _, r := range a.ResReads {
-		if slices.Contains(other.ResWrites, r) {
-			return true
-		}
-	}
-
-	// Write vs read/write conflicts for events
-	for _, w := range a.EventWrites {
-		if slices.Contains(other.EventReads, w) {
-			return true
-		}
-		if slices.Contains(other.EventWrites, w) {
-			return true
-		}
-	}
-	for _, r := range a.EventReads {
-		if slices.Contains(other.EventWrites, r) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (a AccessMeta) toInternal() scheduler.AccessMeta {

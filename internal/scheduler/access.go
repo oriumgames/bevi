@@ -6,33 +6,33 @@ import "slices"
 func (a AccessMeta) Conflicts(other AccessMeta) bool {
 	// Fast path: use compact bitsets if available.
 	// Components
-	if a.writesBits != nil && other.readsBits != nil && a.writesBits.anyIntersect(other.readsBits) {
+	if a.writesBits != nil && other.readsBits != nil && !a.writesBits.IsDisjoint(other.readsBits) {
 		return true
 	}
-	if a.writesBits != nil && other.writesBits != nil && a.writesBits.anyIntersect(other.writesBits) {
+	if a.writesBits != nil && other.writesBits != nil && !a.writesBits.IsDisjoint(other.writesBits) {
 		return true
 	}
-	if a.readsBits != nil && other.writesBits != nil && a.readsBits.anyIntersect(other.writesBits) {
+	if a.readsBits != nil && other.writesBits != nil && !a.readsBits.IsDisjoint(other.writesBits) {
 		return true
 	}
 	// Resources
-	if a.resWritesBits != nil && other.resReadsBits != nil && a.resWritesBits.anyIntersect(other.resReadsBits) {
+	if a.resWritesBits != nil && other.resReadsBits != nil && !a.resWritesBits.IsDisjoint(other.resReadsBits) {
 		return true
 	}
-	if a.resWritesBits != nil && other.resWritesBits != nil && a.resWritesBits.anyIntersect(other.resWritesBits) {
+	if a.resWritesBits != nil && other.resWritesBits != nil && !a.resWritesBits.IsDisjoint(other.resWritesBits) {
 		return true
 	}
-	if a.resReadsBits != nil && other.resWritesBits != nil && a.resReadsBits.anyIntersect(other.resWritesBits) {
+	if a.resReadsBits != nil && other.resWritesBits != nil && !a.resReadsBits.IsDisjoint(other.resWritesBits) {
 		return true
 	}
 	// Events
-	if a.eventWritesBits != nil && other.eventReadsBits != nil && a.eventWritesBits.anyIntersect(other.eventReadsBits) {
+	if a.eventWritesBits != nil && other.eventReadsBits != nil && !a.eventWritesBits.IsDisjoint(other.eventReadsBits) {
 		return true
 	}
-	if a.eventWritesBits != nil && other.eventWritesBits != nil && a.eventWritesBits.anyIntersect(other.eventWritesBits) {
+	if a.eventWritesBits != nil && other.eventWritesBits != nil && !a.eventWritesBits.IsDisjoint(other.eventWritesBits) {
 		return true
 	}
-	if a.eventReadsBits != nil && other.eventWritesBits != nil && a.eventReadsBits.anyIntersect(other.eventWritesBits) {
+	if a.eventReadsBits != nil && other.eventWritesBits != nil && !a.eventReadsBits.IsDisjoint(other.eventWritesBits) {
 		return true
 	}
 

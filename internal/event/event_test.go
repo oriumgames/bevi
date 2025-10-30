@@ -515,29 +515,44 @@ func TestCancelFromMultipleReadersOnlySetsFlagOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(3)
 
+	ready := make(chan struct{}, 3)
+	proceed := make(chan struct{})
+
 	go func() {
 		defer wg.Done()
 		for range r1.Iter() {
+			ready <- struct{}{}
+			<-proceed
 			r1.Cancel()
 			cancels.Add(1)
+			break
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		for range r2.Iter() {
+			ready <- struct{}{}
+			<-proceed
 			if !r2.IsCancelled() {
-				// If r2 wins the race, it might cancel as well.
 				r2.Cancel()
 				cancels.Add(1)
 			}
+			break
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		for range r3.Iter() {
-			// don't cancel
+			ready <- struct{}{}
+			<-proceed
+			break
 		}
 	}()
+
+	for range 3 {
+		<-ready
+	}
+	close(proceed)
 
 	wg.Wait()
 
