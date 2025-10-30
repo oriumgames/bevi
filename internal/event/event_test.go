@@ -253,6 +253,7 @@ func TestMultipleReadersCancelVisibilityAndCompletion(t *testing.T) {
 	// Synchronize r1 cancel -> r2 sees cancellation.
 	canceled := make(chan struct{})
 	seen := make(chan struct{})
+	observed := make(chan struct{}, 1)
 
 	go func() {
 		defer wg.Done()
@@ -268,14 +269,20 @@ func TestMultipleReadersCancelVisibilityAndCompletion(t *testing.T) {
 		defer wg.Done()
 		for range r2.Iter() {
 			<-canceled
-			if !r2.IsCancelled() {
-				t.Fatalf("r2 did not see cancellation from r1")
+			if r2.IsCancelled() {
+				observed <- struct{}{}
 			}
 			close(seen)
 		}
 	}()
 
 	wg.Wait()
+
+	select {
+	case <-observed:
+	default:
+		t.Fatalf("r2 did not see cancellation from r1")
+	}
 
 	// Writer sees cancellation and completion.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
