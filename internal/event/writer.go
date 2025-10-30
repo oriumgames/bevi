@@ -104,7 +104,7 @@ func (r EventResult[T]) WaitCancelled(ctx context.Context) bool {
 
 	// Spin briefly to catch very near-term updates without allocating timers.
 	const spins = 128
-	for i := 0; i < spins; i++ {
+	for range spins {
 		if r.ent.cancelled.Load() {
 			return true
 		}

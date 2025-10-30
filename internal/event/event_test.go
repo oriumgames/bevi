@@ -314,8 +314,8 @@ func TestStressPoolingNoWait(t *testing.T) {
 	// Warm-up to grow internal buffers and pools.
 	const warmFrames = 8
 	const warmPerFrame = 256
-	for f := 0; f < warmFrames; f++ {
-		for i := 0; i < warmPerFrame; i++ {
+	for range warmFrames {
+		for i := range warmPerFrame {
 			w.Emit(testEvent{ID: i})
 		}
 		b.Advance()
@@ -328,8 +328,8 @@ func TestStressPoolingNoWait(t *testing.T) {
 	const perFrame = 512
 
 	total := 0
-	for f := 0; f < frames; f++ {
-		for i := 0; i < perFrame; i++ {
+	for f := range frames {
+		for i := range perFrame {
 			w.Emit(testEvent{ID: i})
 		}
 		b.Advance()
@@ -431,12 +431,12 @@ func TestConcurrentReadersAndWriters(t *testing.T) {
 	wg.Add(writers)
 	start := make(chan struct{})
 
-	for w := 0; w < writers; w++ {
+	for w := range writers {
 		go func(id int) {
 			defer wg.Done()
 			<-start
 			wr := event.WriterFor[int](b)
-			for i := 0; i < perWriter; i++ {
+			for i := range perWriter {
 				wr.Emit(i + id*100000)
 				// yield to increase interleaving
 				if i%50 == 0 {
@@ -450,7 +450,7 @@ func TestConcurrentReadersAndWriters(t *testing.T) {
 	// Collect over several frames.
 	total := 0
 	seen := make(map[int]struct{})
-	for f := 0; f < 6; f++ {
+	for range 6 {
 		time.Sleep(2 * time.Millisecond)
 		b.Advance()
 		for v := range r.Iter() {
@@ -465,7 +465,7 @@ func TestConcurrentReadersAndWriters(t *testing.T) {
 	wg.Wait()
 
 	// Drain remaining
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		b.Advance()
 		for range r.Iter() {
 			total++

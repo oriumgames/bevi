@@ -133,7 +133,7 @@ func (s *store[T]) appendMany(vals []T) {
 	s.mu.Lock()
 	n := len(vals)
 	ents := make([]*entry[T], n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ents[i] = s.newEntry(vals[i], false)
 	}
 	s.writeEnt = append(s.writeEnt, ents...)

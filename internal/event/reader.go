@@ -97,10 +97,7 @@ func (r Reader[T]) DrainTo(dst []T) int {
 		return 0
 	}
 	vals := r.store.drain()
-	n := len(vals)
-	if n > len(dst) {
-		n = len(dst)
-	}
+	n := min(len(vals), len(dst))
 	copy(dst, vals[:n])
 	return n
 }

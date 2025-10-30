@@ -180,7 +180,7 @@ func TestEveryUnderLoad(t *testing.T) {
 
 	start := time.Now()
 	// Run for ~220ms, sleeping 10ms between frames to simulate frames.
-	for i := 0; i < 22; i++ {
+	for range 22 {
 		s.RunStage(ctx, Update, &world, nil)
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -288,7 +288,7 @@ func TestZeroEveryAndLoad(t *testing.T) {
 
 	// Add many other systems with no particular constraints.
 	const extra = 50
-	for i := 0; i < extra; i++ {
+	for i := range extra {
 		sys := &scheduler.System{
 			Name:  "Extra-" + string(rune('A'+(i%26))),
 			Stage: Update,
@@ -309,7 +309,7 @@ func TestZeroEveryAndLoad(t *testing.T) {
 
 	// Run several frames quickly.
 	const frames = 10
-	for i := 0; i < frames; i++ {
+	for range frames {
 		s.RunStage(ctx, Update, &world, nil)
 	}
 
