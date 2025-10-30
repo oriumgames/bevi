@@ -68,18 +68,23 @@ func (a *App) Run() {
 		cancel()
 	}()
 
-	a.sched.RunStage(ctx, scheduler.Stage(Startup), a.world, nil)
-	// Flip buffers after Startup so the first Update sees events produced during Startup
-	a.events.Advance()
+	a.runStage(ctx, PreStartup)
+	a.runStage(ctx, Startup)
+	a.runStage(ctx, PostStartup)
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		a.sched.RunStage(ctx, scheduler.Stage(Update), a.world, nil)
-		// Complete events with no readers, then flip after each Update frame
-		a.events.CompleteNoReader()
-		a.events.Advance()
+		a.runStage(ctx, PreUpdate)
+		a.runStage(ctx, Update)
+		a.runStage(ctx, PostUpdate)
 	}
+}
+
+func (a *App) runStage(ctx context.Context, stage Stage) {
+	a.sched.RunStage(ctx, scheduler.Stage(stage), a.world, nil)
+	a.events.CompleteNoReader()
+	a.events.Advance()
 }
 
 func (a *App) World() *ecs.World {
