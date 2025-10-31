@@ -13,7 +13,9 @@ import (
 	"go/ast"
 	"go/format"
 	"go/token"
+	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -76,15 +78,126 @@ func (SystemTagAnalyzer) Run(ctx *Context) error {
 				optsStr := m[2]
 
 				sys := &System{
-					PkgDir:     pkg.Dir,
-					PkgName:    pkg.Name,
-					FilePath:   gf.Path,
-					FuncName:   fd.Name.Name,
-					Stage:      stage,
-					SystemName: fd.Name.Name,
+					PkgDir:             pkg.Dir,
+					PkgName:            pkg.Name,
+					FilePath:           gf.Path,
+					FuncName:           fd.Name.Name,
+					Stage:              stage,
+					SystemName:         fd.Name.Name,
+					ExtraImports:       make(map[string]string),
+					DerivedAliasCounts: make(map[string]int),
+					FilterByParam:      make(map[string]FilterOptions),
 				}
 				if err := parseOptionsInto(optsStr, sys); err != nil {
 					return fmt.Errorf("parse options for %s: %w", sys.FuncName, err)
+				}
+
+				// Collect imports (normal and blank) from this file for later synthesis.
+				// Map alias -> import path. For blank imports, derive alias from last path segment.
+				// Resolve import aliases (normal and blank), derive unique aliases for blanks/conflicts.
+				aliasMap := make(map[string]string) // original/base alias -> resolved unique alias
+				for _, imp := range gf.Ast.Imports {
+					if imp == nil || imp.Path == nil {
+						continue
+					}
+					ip := strings.Trim(imp.Path.Value, "\"")
+					if ip == "" {
+						continue
+					}
+					// Prefer explicit alias if provided and not blank ("_")
+					if imp.Name != nil && imp.Name.Name != "" && imp.Name.Name != "_" {
+						al := imp.Name.Name
+						aliasMap[al] = al
+						// Keep explicit alias as-is
+						if _, exists := sys.ExtraImports[al]; !exists {
+							sys.ExtraImports[al] = ip
+						}
+						continue
+					}
+					// Derive base alias from last path segment for blank or unaliased imports
+					base := path.Base(ip)
+					if base == "" {
+						continue
+					}
+					resolved := base
+					// Ensure uniqueness across this system's imports
+					if prevPath, ok := sys.ExtraImports[resolved]; ok && prevPath != ip {
+						// Collision: derive suffixed alias using counters
+						start := max(sys.DerivedAliasCounts[base], 2)
+						for {
+							cand := base + strconv.Itoa(start)
+							if _, taken := sys.ExtraImports[cand]; !taken {
+								resolved = cand
+								sys.DerivedAliasCounts[base] = start + 1
+								break
+							}
+							start++
+						}
+					}
+					aliasMap[base] = resolved
+					sys.ExtraImports[resolved] = ip
+				}
+
+				// Parse //bevi:filter DSL lines: "<target> [+Type|-Type|!exclusive|!register]..."
+				for _, c := range fd.Doc.List {
+					txt := strings.TrimPrefix(c.Text, "//")
+					txt = strings.TrimPrefix(txt, "/*")
+					txt = strings.TrimSuffix(txt, "*/")
+					txt = strings.TrimSpace(txt)
+					if !strings.HasPrefix(txt, "bevi:filter") {
+						continue
+					}
+					rest := strings.TrimSpace(strings.TrimPrefix(txt, "bevi:filter"))
+					if rest == "" {
+						continue
+					}
+					toks := splitTopLevel(rest)
+					if len(toks) == 0 {
+						continue
+					}
+					target := toks[0] // parameter name or positional like Q0/F0
+					opts := sys.FilterByParam[target]
+					for _, tk := range toks[1:] {
+						if tk == "" {
+							continue
+						}
+						switch {
+						case strings.HasPrefix(tk, "+"):
+							ty := strings.TrimSpace(strings.TrimPrefix(tk, "+"))
+							if ty != "" {
+								// Rewrite alias if qualified and known; warn if unknown alias used
+								if dot := strings.IndexByte(ty, '.'); dot > 0 {
+									al := ty[:dot]
+									name := ty[dot+1:]
+									if res, ok := aliasMap[al]; ok && res != "" {
+										ty = res + "." + name
+									} else if _, ok := sys.ExtraImports[al]; !ok {
+										ctx.Logger("filter type %q references unknown import alias %q in %s (%s)", ty, al, sys.FuncName, gf.Path)
+									}
+								}
+								opts.With = append(opts.With, ty)
+							}
+						case strings.HasPrefix(tk, "-"):
+							ty := strings.TrimSpace(strings.TrimPrefix(tk, "-"))
+							if ty != "" {
+								if dot := strings.IndexByte(ty, '.'); dot > 0 {
+									al := ty[:dot]
+									name := ty[dot+1:]
+									if res, ok := aliasMap[al]; ok && res != "" {
+										ty = res + "." + name
+									} else if _, ok := sys.ExtraImports[al]; !ok {
+										ctx.Logger("filter type %q references unknown import alias %q in %s (%s)", ty, al, sys.FuncName, gf.Path)
+									}
+								}
+								opts.Without = append(opts.Without, ty)
+							}
+						case tk == "!exclusive":
+							opts.Exclusive = true
+						case tk == "!register":
+							opts.Register = true
+						}
+					}
+					sys.FilterByParam[target] = opts
 				}
 
 				// Attach to package (Package exposes SysSpecs and addSystem).
@@ -175,6 +288,7 @@ var (
 	reWorld       = regexp.MustCompile(`^\*?ecs\.World$`)
 	reECSMap      = regexp.MustCompile(`^ecs\.Map\d+\[(.+)\]$`)
 	reECSQuery    = regexp.MustCompile(`^ecs\.Query\d+\[(.+)\]$`)
+	reECSFilter   = regexp.MustCompile(`^ecs\.Filter\d+\[(.+)\]$`)
 	reECSResource = regexp.MustCompile(`^ecs\.Resource\[(.+)\]$`)
 	reEventWriter = regexp.MustCompile(`^bevi\.EventWriter\[(.+)\]$`)
 	reEventReader = regexp.MustCompile(`^bevi\.EventReader\[(.+)\]$`)
@@ -213,14 +327,62 @@ func (ParamInferAnalyzer) Run(ctx *Context) error {
 						pointer := strings.HasPrefix(norm, "*")
 						target := strings.TrimPrefix(norm, "*")
 
-						params := 1
-						if len(f.Names) > 0 {
-							params = len(f.Names)
-						}
 						p := inferParamFromType(target, typeExpr, pointer)
 
-						for range params {
+						// Preserve parameter names when present; otherwise, append anonymous param once.
+						if len(f.Names) == 0 {
 							sys.Params = append(sys.Params, p)
+						} else {
+							for _, nm := range f.Names {
+								p2 := p
+								if nm != nil {
+									p2.Name = nm.Name
+								}
+								sys.Params = append(sys.Params, p2)
+							}
+						}
+					}
+					// Bind per-parameter filter options from //bevi:filter lines by name or positional index (Qk/Fk)
+					qi, fi := 0, 0
+					matched := make(map[string]bool)
+					for i := range sys.Params {
+						switch sys.Params[i].Kind {
+						case ParamECSQuery, ParamECSFilter:
+							// Prefer binding by parameter name
+							if sys.Params[i].Name != "" {
+								if fo, ok := sys.FilterByParam[sys.Params[i].Name]; ok {
+									sys.Params[i].FilterOpts = fo
+									matched[sys.Params[i].Name] = true
+									if sys.Params[i].Kind == ParamECSQuery {
+										qi++
+									} else {
+										fi++
+									}
+									continue
+								}
+							}
+							// Fallback to positional aliases Qk/Fk
+							if sys.Params[i].Kind == ParamECSQuery {
+								key := fmt.Sprintf("Q%d", qi)
+								if fo, ok := sys.FilterByParam[key]; ok {
+									sys.Params[i].FilterOpts = fo
+									matched[key] = true
+								}
+								qi++
+							} else {
+								key := fmt.Sprintf("F%d", fi)
+								if fo, ok := sys.FilterByParam[key]; ok {
+									sys.Params[i].FilterOpts = fo
+									matched[key] = true
+								}
+								fi++
+							}
+						}
+					}
+					// Diagnostics for unknown filter targets (typos or no matching param)
+					for k := range sys.FilterByParam {
+						if !matched[k] {
+							ctx.Logger("unknown filter target %q for system %s (%s)", k, sys.FuncName, sys.FilePath)
 						}
 					}
 				}
@@ -256,7 +418,10 @@ func inferParamFromType(normalizedNoStar string, originalExpr string, pointer bo
 		out.ElemTypes = splitGenericArgs(reECSQuery.FindStringSubmatch(normalizedNoStar)[1])
 		out.HelperKey = "query:" + strings.Join(out.ElemTypes, ",")
 		// Note: out.Pointer already indicates *ecs.QueryN[...] (pointer-marked) for write intent.
-
+	case reECSFilter.MatchString(normalizedNoStar):
+		out.Kind = ParamECSFilter
+		out.ElemTypes = splitGenericArgs(reECSFilter.FindStringSubmatch(normalizedNoStar)[1])
+		out.HelperKey = "flt:" + strings.Join(out.ElemTypes, ",")
 	case reECSResource.MatchString(normalizedNoStar):
 		out.Kind = ParamECSResource
 		out.ElemTypes = splitGenericArgs(reECSResource.FindStringSubmatch(normalizedNoStar)[1])

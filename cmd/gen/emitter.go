@@ -58,11 +58,11 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 	w("// Generated at %s\n\n", time.Now().Format(time.RFC3339))
 	w("package %s\n\n", pkg.Name)
 
-	// Imports we may need based on observed params/metadata
-	imports := map[string]bool{
-		`"github.com/oriumgames/bevi"`:   true,
-		`"github.com/mlange-42/ark/ecs"`: true,
-		`"context"`:                      true,
+	// Imports we may need based on observed params/metadata (path -> alias; empty alias means unaliased)
+	imports := map[string]string{
+		"github.com/oriumgames/bevi":   "",
+		"github.com/mlange-42/ark/ecs": "",
+		"context":                      "",
 	}
 	useTime := false
 
@@ -87,8 +87,27 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 			switch p.Kind {
 			case ParamECSMap:
 				_ = ensureHelper(p.Kind, p.HelperKey, p.ElemTypes)
-			case ParamECSQuery:
-				_ = ensureHelper(p.Kind, p.HelperKey, p.ElemTypes)
+			case ParamECSQuery, ParamECSFilter:
+				// Build a helper key augmented with per-parameter filter options to avoid duplicates.
+				key := p.HelperKey
+				if len(p.FilterOpts.With) > 0 || len(p.FilterOpts.Without) > 0 || p.FilterOpts.Exclusive || p.FilterOpts.Register {
+					var parts []string
+					parts = append(parts, key)
+					if len(p.FilterOpts.With) > 0 {
+						parts = append(parts, "with:"+strings.Join(p.FilterOpts.With, ","))
+					}
+					if len(p.FilterOpts.Without) > 0 {
+						parts = append(parts, "without:"+strings.Join(p.FilterOpts.Without, ","))
+					}
+					if p.FilterOpts.Exclusive {
+						parts = append(parts, "exclusive")
+					}
+					if p.FilterOpts.Register {
+						parts = append(parts, "register")
+					}
+					key = strings.Join(parts, "|")
+				}
+				_ = ensureHelper(p.Kind, key, p.ElemTypes)
 			case ParamECSResource:
 				_ = ensureHelper(p.Kind, p.HelperKey, p.ElemTypes)
 			case ParamEventWriter:
@@ -99,18 +118,34 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 		}
 	}
 	if useTime {
-		imports[`"time"`] = true
+		imports["time"] = ""
 	}
 
-	// Write imports
-	var impKeys []string
-	for k := range imports {
-		impKeys = append(impKeys, k)
+	// Synthesize extra imports discovered from source files (normal and blank imports).
+	// Provided by analyzers via System.ExtraImports (alias -> import path).
+	for _, sys := range pkg.SysSpecs {
+		for alias, ip := range sys.ExtraImports {
+			// If this path is already present, prefer the existing (usually unaliased) entry.
+			if _, exists := imports[ip]; !exists {
+				imports[ip] = alias
+			}
+		}
 	}
-	sort.Strings(impKeys)
+
+	// Write imports (deduplicated by path; prefer unaliased for core deps)
+	var paths []string
+	for p := range imports {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
 	w("import (\n")
-	for _, k := range impKeys {
-		w("\t%s\n", k)
+	for _, p := range paths {
+		al := imports[p]
+		if al == "" {
+			w("\t%q\n", p)
+		} else {
+			w("\t%s %q\n", al, p)
+		}
 	}
 	w(")\n\n")
 
@@ -128,13 +163,70 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 				return nil, err
 			}
 			w("\t%s := ecs.NewMap%d[%s](app.World())\n", name, len(h.typs), gname)
-		case ParamECSQuery:
-			// ecs.NewFilterN[T...](app.World())
+		case ParamECSQuery, ParamECSFilter:
+			// ecs.NewFilterN[T...](app.World()) with chained options parsed from helper key
 			gname, err := genericTypeList(h.typs)
 			if err != nil {
 				return nil, err
 			}
 			w("\t%s := ecs.NewFilter%d[%s](app.World())\n", name, len(h.typs), gname)
+			// Parse options from key: "...|with:a,b|without:c|exclusive|register"
+			{
+				parts := strings.Split(h.key, "|")
+				withs := []string{}
+				withouts := []string{}
+				excl := false
+				reg := false
+				for _, seg := range parts[1:] {
+					if after, ok := strings.CutPrefix(seg, "with:"); ok {
+						items := strings.SplitSeq(after, ",")
+						for it := range items {
+							it = strings.TrimSpace(it)
+							if it != "" {
+								withs = append(withs, it)
+							}
+						}
+					} else if after, ok := strings.CutPrefix(seg, "without:"); ok {
+						items := strings.SplitSeq(after, ",")
+						for it := range items {
+							it = strings.TrimSpace(it)
+							if it != "" {
+								withouts = append(withouts, it)
+							}
+						}
+					} else if seg == "exclusive" {
+						excl = true
+					} else if seg == "register" {
+						reg = true
+					}
+				}
+				if len(withs) > 0 {
+					w("\t%s = %s.With(", name, name)
+					for i, t := range withs {
+						if i > 0 {
+							w(", ")
+						}
+						w("ecs.C[%s]()", t)
+					}
+					w(")\n")
+				}
+				if len(withouts) > 0 {
+					w("\t%s = %s.Without(", name, name)
+					for i, t := range withouts {
+						if i > 0 {
+							w(", ")
+						}
+						w("ecs.C[%s]()", t)
+					}
+					w(")\n")
+				}
+				if excl {
+					w("\t%s = %s.Exclusive()\n", name, name)
+				}
+				if reg {
+					w("\t%s = %s.Register()\n", name, name)
+				}
+			}
 		case ParamECSResource:
 			// ecs.NewResource[T](app.World())
 			if len(h.typs) != 1 {
@@ -275,7 +367,26 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 				}
 				args = append(args, name)
 			case ParamECSQuery:
-				name := findHelperName(helpers, p.HelperKey)
+				// Lookup helper name using an augmented key that includes per-param filter options.
+				key := p.HelperKey
+				if len(p.FilterOpts.With) > 0 || len(p.FilterOpts.Without) > 0 || p.FilterOpts.Exclusive || p.FilterOpts.Register {
+					var parts []string
+					parts = append(parts, key)
+					if len(p.FilterOpts.With) > 0 {
+						parts = append(parts, "with:"+strings.Join(p.FilterOpts.With, ","))
+					}
+					if len(p.FilterOpts.Without) > 0 {
+						parts = append(parts, "without:"+strings.Join(p.FilterOpts.Without, ","))
+					}
+					if p.FilterOpts.Exclusive {
+						parts = append(parts, "exclusive")
+					}
+					if p.FilterOpts.Register {
+						parts = append(parts, "register")
+					}
+					key = strings.Join(parts, "|")
+				}
+				name := findHelperName(helpers, key)
 				if name == "" {
 					return nil, fmt.Errorf("internal: missing query helper for %v", p.ElemTypes)
 				}
@@ -292,6 +403,31 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 					args = append(args, tmp)
 					closes = append(closes, tmp)
 				}
+			case ParamECSFilter:
+				// Lookup helper for filter param and pass it directly
+				key := p.HelperKey
+				if len(p.FilterOpts.With) > 0 || len(p.FilterOpts.Without) > 0 || p.FilterOpts.Exclusive || p.FilterOpts.Register {
+					var parts []string
+					parts = append(parts, key)
+					if len(p.FilterOpts.With) > 0 {
+						parts = append(parts, "with:"+strings.Join(p.FilterOpts.With, ","))
+					}
+					if len(p.FilterOpts.Without) > 0 {
+						parts = append(parts, "without:"+strings.Join(p.FilterOpts.Without, ","))
+					}
+					if p.FilterOpts.Exclusive {
+						parts = append(parts, "exclusive")
+					}
+					if p.FilterOpts.Register {
+						parts = append(parts, "register")
+					}
+					key = strings.Join(parts, "|")
+				}
+				name := findHelperName(helpers, key)
+				if name == "" {
+					return nil, fmt.Errorf("internal: missing filter helper for %v", p.ElemTypes)
+				}
+				args = append(args, name)
 
 			case ParamECSResource:
 				name := findHelperName(helpers, p.HelperKey)
@@ -339,7 +475,7 @@ func helperName(i int, h genHelper) string {
 	switch h.kind {
 	case ParamECSMap:
 		prefix = "map"
-	case ParamECSQuery:
+	case ParamECSQuery, ParamECSFilter:
 		prefix = "flt"
 	case ParamECSResource:
 		prefix = "res"

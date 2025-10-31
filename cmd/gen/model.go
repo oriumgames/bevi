@@ -48,6 +48,18 @@ type System struct {
 
 	// Registration name; defaults to function name if empty.
 	SystemName string
+
+	// Extra imports discovered from source (including blank imports), to be
+	// synthesized into the generated file. Key is alias, value is import path.
+	ExtraImports map[string]string
+
+	// Counts for derived aliases to avoid collisions (e.g., "phys", "phys2"...).
+	// Key is the base alias (usually path.Base(importPath)), value increments for suffixing.
+	DerivedAliasCounts map[string]int
+
+	// Per-parameter filter options gathered from //bevi:filter lines.
+	// Key is parameter name (preferred) or synthetic like "Q0", "F0".
+	FilterByParam map[string]FilterOptions
 }
 
 // ParamKind describes the high-level category for an injected parameter.
@@ -62,6 +74,7 @@ const (
 	ParamECSResource
 	ParamEventWriter
 	ParamEventReader
+	ParamECSFilter
 )
 
 // String returns a short label for the parameter kind (debugging).
@@ -81,7 +94,8 @@ func (k ParamKind) String() string {
 		return "EventWriter"
 	case ParamEventReader:
 		return "EventReader"
-
+	case ParamECSFilter:
+		return "ECSFilter"
 	default:
 		return "Unknown"
 	}
@@ -90,17 +104,21 @@ func (k ParamKind) String() string {
 // Param represents an input parameter for a system function.
 //
 // Fields:
+//   - Name: original parameter identifier in the function signature (if present)
 //   - TypeExpr: pretty-printed original type (for debugging)
 //   - ElemTypes: type arguments for generic forms (e.g., Query2[T1,T2] => [T1,T2])
 //   - HelperKey: deduplication key for prebuilt helpers (e.g., "query:T1,T2")
 //   - Pointer: true if parameter type is a pointer to the kind (e.g., *ecs.QueryN[T])
 //     This can be used to drive conventions like pointer-marked queries imply write.
+//   - FilterOpts: merged filter options for this parameter (from //bevi:filter)
 type Param struct {
-	Kind      ParamKind
-	TypeExpr  string
-	ElemTypes []string
-	HelperKey string
-	Pointer   bool
+	Name       string
+	Kind       ParamKind
+	TypeExpr   string
+	ElemTypes  []string
+	HelperKey  string
+	Pointer    bool
+	FilterOpts FilterOptions
 }
 
 // genHelper is an internal declaration used by the emitter to define
@@ -109,6 +127,14 @@ type genHelper struct {
 	key  string
 	kind ParamKind
 	typs []string
+}
+
+// FilterOptions captures advanced Ark ECS Filter chain options for a target parameter.
+type FilterOptions struct {
+	With      []string // component type names, possibly qualified (e.g., pkg.Type)
+	Without   []string // component type names, possibly qualified
+	Exclusive bool
+	Register  bool
 }
 
 // -----------------------------
