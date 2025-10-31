@@ -171,15 +171,13 @@ type ParamInferAnalyzer struct{}
 func (ParamInferAnalyzer) Name() string { return "ParamInferAnalyzer" }
 
 var (
-	reContext     = regexp.MustCompile(`^(?:\*|\s*)?context\.Context$`)
+	reContext     = regexp.MustCompile(`^context\.Context$`)
 	reWorld       = regexp.MustCompile(`^\*?ecs\.World$`)
 	reECSMap      = regexp.MustCompile(`^ecs\.Map\d+\[(.+)\]$`)
 	reECSQuery    = regexp.MustCompile(`^ecs\.Query\d+\[(.+)\]$`)
-	reECSFilter   = regexp.MustCompile(`^ecs\.Filter\d+\[(.+)\]$`)
-	reECSBatch    = regexp.MustCompile(`^ecs\.Batch\d+\[(.+)\]$`)
 	reECSResource = regexp.MustCompile(`^ecs\.Resource\[(.+)\]$`)
-	reEventWriter = regexp.MustCompile(`^(?:bevi\.)?EventWriter\[(.+)\]$`)
-	reEventReader = regexp.MustCompile(`^(?:bevi\.)?EventReader\[(.+)\]$`)
+	reEventWriter = regexp.MustCompile(`^bevi\.EventWriter\[(.+)\]$`)
+	reEventReader = regexp.MustCompile(`^bevi\.EventReader\[(.+)\]$`)
 )
 
 func (ParamInferAnalyzer) Run(ctx *Context) error {
@@ -245,7 +243,7 @@ func inferParamFromType(normalizedNoStar string, originalExpr string, pointer bo
 	// Decide parameter kind based on normalized type string (without leading '*')
 	out := Param{TypeExpr: originalExpr, Pointer: pointer}
 	switch {
-	case reContext.MatchString(normalizedNoStar):
+	case reContext.MatchString(normalizedNoStar) && !pointer:
 		out.Kind = ParamContext
 	case reWorld.MatchString(normalizedNoStar):
 		out.Kind = ParamWorld
@@ -258,14 +256,7 @@ func inferParamFromType(normalizedNoStar string, originalExpr string, pointer bo
 		out.ElemTypes = splitGenericArgs(reECSQuery.FindStringSubmatch(normalizedNoStar)[1])
 		out.HelperKey = "query:" + strings.Join(out.ElemTypes, ",")
 		// Note: out.Pointer already indicates *ecs.QueryN[...] (pointer-marked) for write intent.
-	case reECSFilter.MatchString(normalizedNoStar):
-		out.Kind = ParamECSFilter
-		out.ElemTypes = splitGenericArgs(reECSFilter.FindStringSubmatch(normalizedNoStar)[1])
-		out.HelperKey = "query:" + strings.Join(out.ElemTypes, ",")
-	case reECSBatch.MatchString(normalizedNoStar):
-		out.Kind = ParamECSBatch
-		out.ElemTypes = splitGenericArgs(reECSBatch.FindStringSubmatch(normalizedNoStar)[1])
-		out.HelperKey = "query:" + strings.Join(out.ElemTypes, ",")
+
 	case reECSResource.MatchString(normalizedNoStar):
 		out.Kind = ParamECSResource
 		out.ElemTypes = splitGenericArgs(reECSResource.FindStringSubmatch(normalizedNoStar)[1])

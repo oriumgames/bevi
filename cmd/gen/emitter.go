@@ -87,7 +87,7 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 			switch p.Kind {
 			case ParamECSMap:
 				_ = ensureHelper(p.Kind, p.HelperKey, p.ElemTypes)
-			case ParamECSQuery, ParamECSFilter, ParamECSBatch:
+			case ParamECSQuery:
 				_ = ensureHelper(p.Kind, p.HelperKey, p.ElemTypes)
 			case ParamECSResource:
 				_ = ensureHelper(p.Kind, p.HelperKey, p.ElemTypes)
@@ -128,7 +128,7 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 				return nil, err
 			}
 			w("\t%s := ecs.NewMap%d[%s](app.World())\n", name, len(h.typs), gname)
-		case ParamECSQuery, ParamECSFilter, ParamECSBatch:
+		case ParamECSQuery:
 			// ecs.NewFilterN[T...](app.World())
 			gname, err := genericTypeList(h.typs)
 			if err != nil {
@@ -183,7 +183,7 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 				if len(p.ElemTypes) == 1 {
 					eventLines = append(eventLines, fmt.Sprintf("bevi.AccessEventRead[%s](&acc)", p.ElemTypes[0]))
 				}
-			case ParamECSQuery, ParamECSFilter, ParamECSBatch:
+			case ParamECSQuery:
 				// Pointer-marked queries imply WRITE; non-pointer default to READ
 				if p.Pointer {
 					for _, t := range p.ElemTypes {
@@ -260,6 +260,7 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 		// Wrapper: preserve original parameter order
 		w("\t\tapp.AddSystem(bevi.%s, %q, meta, func(ctx context.Context, w *ecs.World) {\n", sys.Stage, sys.SystemName)
 		var args []string
+		var closes []string
 		tmpIdx := 0
 		for _, p := range sys.Params {
 			switch p.Kind {
@@ -283,28 +284,15 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 					tmpIdx++
 					w("\t\t\t%s := %s.Query()\n", tmp, name)
 					args = append(args, "&"+tmp)
+					closes = append(closes, tmp)
 				} else {
-					args = append(args, fmt.Sprintf("%s.Query()", name))
-				}
-			case ParamECSFilter:
-				name := findHelperName(helpers, p.HelperKey)
-				if name == "" {
-					return nil, fmt.Errorf("internal: missing filter helper for %v", p.ElemTypes)
-				}
-				args = append(args, name)
-			case ParamECSBatch:
-				name := findHelperName(helpers, p.HelperKey)
-				if name == "" {
-					return nil, fmt.Errorf("internal: missing batch helper for %v", p.ElemTypes)
-				}
-				if p.Pointer {
-					tmp := fmt.Sprintf("_b%d", tmpIdx)
+					tmp := fmt.Sprintf("_q%d", tmpIdx)
 					tmpIdx++
-					w("\t\t\t%s := %s.Batch()\n", tmp, name)
-					args = append(args, "&"+tmp)
-				} else {
-					args = append(args, fmt.Sprintf("%s.Batch()", name))
+					w("\t\t\t%s := %s.Query()\n", tmp, name)
+					args = append(args, tmp)
+					closes = append(closes, tmp)
 				}
+
 			case ParamECSResource:
 				name := findHelperName(helpers, p.HelperKey)
 				if name == "" {
@@ -328,6 +316,9 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 			}
 		}
 		w("\t\t\t%s(%s)\n", sys.FuncName, strings.Join(args, ", "))
+		for _, c := range closes {
+			w("\t\t\t%s.Close()\n", c)
+		}
 		w("\t\t})\n")
 		w("\t}\n\n")
 	}
@@ -348,7 +339,7 @@ func helperName(i int, h genHelper) string {
 	switch h.kind {
 	case ParamECSMap:
 		prefix = "map"
-	case ParamECSQuery, ParamECSFilter, ParamECSBatch:
+	case ParamECSQuery:
 		prefix = "flt"
 	case ParamECSResource:
 		prefix = "res"

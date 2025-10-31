@@ -57,6 +57,11 @@ func (a *App) AddSystem(stage Stage, name string, meta SystemMeta, fn func(conte
 	return a
 }
 
+func (a *App) AddSystems(reg func(*App)) *App {
+	reg(a)
+	return a
+}
+
 func (a *App) Run() {
 	if err := a.sched.Build(); err != nil {
 		log.Fatalf("scheduler build failed: %v", err)

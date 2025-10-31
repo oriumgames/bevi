@@ -27,9 +27,9 @@ type TickEvent struct {
 }
 
 func main() {
-	a := bevi.NewApp()
-	Systems(a) // it's the generated function
-	a.Run()
+	bevi.NewApp().
+		AddSystems(Systems).
+		Run()
 }
 
 //bevi:system Startup

@@ -62,8 +62,6 @@ const (
 	ParamECSResource
 	ParamEventWriter
 	ParamEventReader
-	ParamECSFilter
-	ParamECSBatch
 )
 
 // String returns a short label for the parameter kind (debugging).
@@ -83,10 +81,7 @@ func (k ParamKind) String() string {
 		return "EventWriter"
 	case ParamEventReader:
 		return "EventReader"
-	case ParamECSFilter:
-		return "ECSFilter"
-	case ParamECSBatch:
-		return "ECSBatch"
+
 	default:
 		return "Unknown"
 	}
