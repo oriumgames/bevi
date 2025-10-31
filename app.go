@@ -27,7 +27,7 @@ func NewApp() *App {
 		sched:  scheduler.NewScheduler(),
 		events: bus,
 		diag: &internalDiagnostics{
-			d: NopDiagnostics{},
+			d: &NopDiagnostics{},
 		},
 	}
 }
@@ -59,6 +59,11 @@ func (a *App) AddSystem(stage Stage, name string, meta SystemMeta, fn func(conte
 
 func (a *App) AddSystems(reg func(*App)) *App {
 	reg(a)
+	return a
+}
+
+func (a *App) SetDiagnostics(d Diagnostics) *App {
+	a.diag.d = d
 	return a
 }
 
