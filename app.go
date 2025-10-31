@@ -75,6 +75,7 @@ func (a *App) Run() {
 	a.runStage(ctx, PreStartup)
 	a.runStage(ctx, Startup)
 	a.runStage(ctx, PostStartup)
+
 	for {
 		if ctx.Err() != nil {
 			return
