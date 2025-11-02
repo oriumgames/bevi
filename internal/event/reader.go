@@ -1,5 +1,7 @@
 package event
 
+import "iter"
+
 // Reader iterates over the current read buffer snapshot (the previous frame's writes).
 // It supports per-event cancellation via Cancel() during iteration and exposes the
 // current event's cancellation state via IsCancelled(). For batch extraction, use
@@ -49,7 +51,7 @@ func (r *Reader[T]) IsCancelled() bool {
 //     the event for waiting writers.
 //   - If the consumer stops early (yield returns false), any remaining registered entries
 //     are decremented so writers won't wait forever.
-func (r *Reader[T]) Iter() func(func(T) bool) {
+func (r *Reader[T]) Iter() iter.Seq[T] {
 	entries := r.store.snapshotEntries()
 
 	// Register this reader only for entries that haven't already completed.
