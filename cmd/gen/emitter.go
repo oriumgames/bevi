@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"go/format"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // GenEmitter implements the Emitter interface.
@@ -123,8 +125,53 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 
 	// Synthesize extra imports discovered from source files (normal and blank imports).
 	// Provided by analyzers via System.ExtraImports (alias -> import path).
+	// Only include imports whose aliases are referenced in generated type strings or annotations.
+	required := map[string]bool{}
+	for _, sys := range pkg.SysSpecs {
+		for _, p := range sys.Params {
+			for _, t := range p.ElemTypes {
+				if al := aliasFromTypeName(t); al != "" {
+					required[al] = true
+				}
+			}
+			for _, t := range p.FilterOpts.With {
+				if al := aliasFromTypeName(t); al != "" {
+					required[al] = true
+				}
+			}
+			for _, t := range p.FilterOpts.Without {
+				if al := aliasFromTypeName(t); al != "" {
+					required[al] = true
+				}
+			}
+		}
+		// Also include aliases referenced by explicit access annotations.
+		for _, t := range sys.CompReads {
+			if al := aliasFromTypeName(t); al != "" {
+				required[al] = true
+			}
+		}
+		for _, t := range sys.CompWrites {
+			if al := aliasFromTypeName(t); al != "" {
+				required[al] = true
+			}
+		}
+		for _, t := range sys.ResReads {
+			if al := aliasFromTypeName(t); al != "" {
+				required[al] = true
+			}
+		}
+		for _, t := range sys.ResWrites {
+			if al := aliasFromTypeName(t); al != "" {
+				required[al] = true
+			}
+		}
+	}
 	for _, sys := range pkg.SysSpecs {
 		for alias, ip := range sys.ExtraImports {
+			if !required[alias] {
+				continue
+			}
 			// If this path is already present, prefer the existing (usually unaliased) entry.
 			if _, exists := imports[ip]; !exists {
 				imports[ip] = alias
@@ -132,16 +179,23 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 		}
 	}
 
-	// Write imports (deduplicated by path; prefer unaliased for core deps)
+	// Write imports (deduplicated by path; prefer unaliased for core deps).
+	// If an alias equals the default import name (last path segment) and there is no conflict,
+	// omit the alias to keep imports clean.
 	var paths []string
 	for p := range imports {
 		paths = append(paths, p)
 	}
 	sort.Strings(paths)
+	baseCount := map[string]int{}
+	for _, p := range paths {
+		baseCount[path.Base(p)]++
+	}
 	w("import (\n")
 	for _, p := range paths {
 		al := imports[p]
-		if al == "" {
+		b := path.Base(p)
+		if al == "" || (al == b && baseCount[b] == 1) {
 			w("\t%q\n", p)
 		} else {
 			w("\t%s %q\n", al, p)
@@ -494,6 +548,35 @@ func findHelperName(hs []genHelper, key string) string {
 		if h.key == key {
 			return helperName(i, h)
 		}
+	}
+	return ""
+}
+
+func isIdent(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if i == 0 {
+			if !(unicode.IsLetter(r) || r == '_') {
+				return false
+			}
+		} else {
+			if !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func aliasFromTypeName(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if i := strings.IndexByte(s, '.'); i > 0 && isIdent(s[:i]) {
+		return s[:i]
 	}
 	return ""
 }

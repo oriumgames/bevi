@@ -85,6 +85,8 @@ func (a *App) Run() {
 	a.runStage(ctx, PreStartup)
 	a.runStage(ctx, Startup)
 	a.runStage(ctx, PostStartup)
+	a.events.CompleteNoReader()
+	a.events.Advance()
 
 	for {
 		if ctx.Err() != nil {
@@ -93,13 +95,13 @@ func (a *App) Run() {
 		a.runStage(ctx, PreUpdate)
 		a.runStage(ctx, Update)
 		a.runStage(ctx, PostUpdate)
+		a.events.CompleteNoReader()
+		a.events.Advance()
 	}
 }
 
 func (a *App) runStage(ctx context.Context, stage Stage) {
 	a.sched.RunStage(ctx, scheduler.Stage(stage), a.world, a.diag)
-	a.events.CompleteNoReader()
-	a.events.Advance()
 }
 
 func (a *App) World() *ecs.World {
