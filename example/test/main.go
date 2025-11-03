@@ -12,9 +12,6 @@ import (
 type Test struct {
 	Money int32
 }
-type Mest struct {
-	Money int32
-}
 
 type CancelEvent struct {
 	Msg string
