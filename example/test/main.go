@@ -73,8 +73,9 @@ func IncreaseMoney(
 }
 
 //bevi:system Update After={"IncreaseMoney"}
-func BonusConsumer(reader bevi.EventReader[BonusEvent], query *ecs.Query1[Test]) {
+func BonusConsumer(reader bevi.EventReader[BonusEvent], filter *ecs.Filter1[Test]) {
 	for ev := range reader.Iter() {
+		query := filter.Query()
 		for query.Next() {
 			test := query.Get()
 			test.Money += ev.Amount

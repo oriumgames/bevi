@@ -367,14 +367,23 @@ func (s *Scheduler) runSystem(ctx context.Context, sys *System, w any, diag Diag
 	var runErr error
 
 	defer func() {
-		if r := recover(); r != nil {
+		end := time.Now()
+
+		r := recover()
+		if r != nil {
 			runErr = fmt.Errorf("panic: %v\n%s", r, debug.Stack())
 		}
+
 		if diag != nil {
-			diag.SystemEnd(sys.Name, sys.Stage, runErr, time.Since(start))
+			diag.SystemEnd(sys.Name, sys.Stage, runErr, end.Sub(start))
 		}
+
 		// Use actual end time for gating accuracy
-		sys.MarkRun(time.Now())
+		sys.MarkRun(end)
+
+		if r != nil {
+			panic(r)
+		}
 	}()
 
 	fn := sys.Fn.(func(context.Context, any))
