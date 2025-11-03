@@ -1,6 +1,6 @@
 # bevi
 
-Bevy-inspired ergonomics for Ark ECS: codegen, staged scheduling, and fast typed events.
+[Bevy](https://docs.rs/bevy_ecs/latest/bevy_ecs/)-inspired ergonomics for [Ark](https://github.com/mlange-42/ark/) ECS: codegen, staged scheduling, and fast typed events.
 
 - Simple runtime: `App` + staged scheduler
 - Intelligent parallel scheduler with dependency ordering and access conflict detection
