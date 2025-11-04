@@ -9,6 +9,8 @@ import (
 	"github.com/oriumgames/bevi"
 )
 
+//go:generate go run github.com/oriumgames/bevi/cmd/gen@latest
+
 type Test struct {
 	Money int32
 }
