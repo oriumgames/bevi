@@ -1,6 +1,6 @@
 package main
 
-//go:generate go run github.com/oriumgames/bevi/cmd/gen@latest
+//go:generate go run github.com/oriumgames/bevi/cmd/gen@v0.1.0
 
 import (
 	"fmt"
