@@ -1,0 +1,120 @@
+package main
+
+//go:generate go run github.com/oriumgames/bevi/cmd/gen@latest
+
+import (
+	"fmt"
+	"log/slog"
+	"strings"
+
+	"github.com/df-mc/dragonfly/server"
+	"github.com/mlange-42/ark/ecs"
+	"github.com/oriumgames/bevi"
+	"github.com/oriumgames/bevi/dragonfly"
+)
+
+func main() {
+	conf, err := server.DefaultConfig().Config(slog.Default())
+	if err != nil {
+		panic(err)
+	}
+
+	bevi.NewApp().
+		AddPlugin(dragonfly.NewPlugin(conf)).
+		AddSystems(Systems).
+		Run()
+}
+
+//bevi:system Update
+func DenyBlockBreak(
+	r bevi.EventReader[dragonfly.PlayerBlockBreak],
+) {
+	for ev := range r.Iter() {
+		ev.Player.Message("You can't break blocks here.")
+		r.Cancel()
+	}
+}
+
+//bevi:system Update Reads={dragonfly.Player}
+func WelcomeOnJoin(
+	r bevi.EventReader[dragonfly.PlayerJoin],
+	f *ecs.Filter1[dragonfly.Player],
+) {
+	for ev := range r.Iter() {
+		// Greet the joining player
+		ev.Player.Message("Welcome to the server! Say \"count\" to see how many players are online.")
+
+		// Announce to everyone else
+		q := f.Query()
+		for q.Next() {
+			p := q.Get()
+			if p == ev.Player {
+				continue
+			}
+			p.Message(fmt.Sprintf("%s joined the server.", ev.Player.Name()))
+		}
+	}
+}
+
+//bevi:system Update Reads={dragonfly.Player}
+func FarewellOnQuit(
+	r bevi.EventReader[dragonfly.PlayerQuit],
+	f *ecs.Filter1[dragonfly.Player],
+) {
+	for ev := range r.Iter() {
+		// Announce to everyone else
+		q := f.Query()
+		for q.Next() {
+			p := q.Get()
+			if p == ev.Player {
+				continue
+			}
+			p.Message(fmt.Sprintf("%s left the server.", ev.Player.Name()))
+		}
+	}
+}
+
+//bevi:system Update Reads={dragonfly.Player}
+func ChatFilterAndCount(
+	r bevi.EventReader[dragonfly.PlayerChat],
+	f *ecs.Filter1[dragonfly.Player],
+) {
+	const badWord = "badword" // trivial example; replace with your list or smarter checker
+
+	for ev := range r.Iter() {
+		if ev.Message == nil {
+			continue
+		}
+		msg := *ev.Message
+		lmsg := strings.ToLower(msg)
+
+		// Very simple profanity filter
+		if strings.Contains(lmsg, badWord) {
+			ev.Player.Message("Please keep chat clean.")
+			r.Cancel()
+			continue
+		}
+
+		// Respond to "count" message
+		if strings.EqualFold(strings.TrimSpace(msg), "count") {
+			q := f.Query()
+			ev.Player.Message(fmt.Sprintf("There are %d players online.", q.Count()))
+			// suppress normal chat broadcast by cancelling the event
+			r.Cancel()
+		}
+	}
+}
+
+//bevi:system Update Every=10s
+func BroadcastPlayerCount(
+	q *ecs.Query1[dragonfly.Player],
+) {
+	// count first
+	n := q.Count()
+
+	// then announce to everyone
+	for q.Next() {
+		p := q.Get()
+		p.Message(fmt.Sprintf("Players online: %d", n))
+	}
+}
