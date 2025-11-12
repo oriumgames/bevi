@@ -19,11 +19,12 @@ type cancelEvent struct {
 	Msg string
 }
 
-func collect[T any](r event.Reader[T]) []T {
+func collect[T any](r *event.Reader[T]) []T {
 	var out []T
-	for v := range r.Iter() {
+	r.ForEach(func(v T) bool {
 		out = append(out, v)
-	}
+		return true
+	})
 	return out
 }
 
@@ -36,14 +37,14 @@ func TestEmitIterOrderAndAdvance(t *testing.T) {
 	w.Emit(1)
 	w.Emit(2)
 
-	gotBefore := collect(r)
+	gotBefore := collect(&r)
 	if len(gotBefore) != 0 {
 		t.Fatalf("expected no events before Advance, got %v", gotBefore)
 	}
 
 	// After Advance -> readers see the events in order.
 	b.Advance()
-	got := collect(r)
+	got := collect(&r)
 	want := []int{1, 2}
 	if len(got) != len(want) {
 		t.Fatalf("expected %d events, got %d", len(want), len(got))
@@ -55,7 +56,7 @@ func TestEmitIterOrderAndAdvance(t *testing.T) {
 	}
 
 	// Iterating again on the same frame should yield none (entries considered done).
-	gotAfter := collect(r)
+	gotAfter := collect(&r)
 	if len(gotAfter) != 0 {
 		t.Fatalf("expected no events after first iteration, got %v", gotAfter)
 	}
@@ -86,14 +87,15 @@ func TestCancelAndWaitCancelledFast(t *testing.T) {
 
 	<-started
 	// Reader cancels the event while iterating.
-	for e := range r.Iter() {
+	r.ForEach(func(e cancelEvent) bool {
 		if e.Msg != "please-cancel" {
 			t.Fatalf("unexpected event payload: %v", e.Msg)
 		}
 		r.Cancel()
 		// simulate some processing time
 		time.Sleep(300 * time.Microsecond)
-	}
+		return true
+	})
 
 	select {
 	case <-done:
@@ -123,7 +125,7 @@ func TestCompleteNoReader(t *testing.T) {
 	res := w.EmitResult("foo")
 	b.Advance()
 
-	// No reader called Iter() this frame. CompleteNoReader should complete the event.
+	// No reader called ForEach() this frame. CompleteNoReader should complete the event.
 	b.CompleteNoReader()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -183,7 +185,7 @@ func TestEmitManyAndDrainTo(t *testing.T) {
 	w.EmitMany([]int{1, 2, 3})
 	b.Advance()
 
-	col := collect(r)
+	col := collect(&r)
 	want := []int{1, 2, 3}
 	if len(col) != len(want) {
 		t.Fatalf("EmitMany -> got %d events, want %d", len(col), len(want))
@@ -257,23 +259,25 @@ func TestMultipleReadersCancelVisibilityAndCompletion(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		for range r1.Iter() {
+		r1.ForEach(func(e int) bool {
 			// r1 cancels then waits for r2 to observe it.
 			r1.Cancel()
 			close(canceled)
 			<-seen
-		}
+			return true
+		})
 	}()
 
 	go func() {
 		defer wg.Done()
-		for range r2.Iter() {
+		r2.ForEach(func(e int) bool {
 			<-canceled
 			if r2.IsCancelled() {
 				observed <- struct{}{}
 			}
 			close(seen)
-		}
+			return true
+		})
 	}()
 
 	wg.Wait()
@@ -300,7 +304,7 @@ func TestNoAdvanceNoEvents(t *testing.T) {
 	w.Emit("a")
 	w.Emit("b")
 
-	got := collect(r)
+	got := collect(&r)
 	if len(got) != 0 {
 		t.Fatalf("expected no events without Advance, got %v", got)
 	}
@@ -333,7 +337,7 @@ func TestStressPoolingNoWait(t *testing.T) {
 			w.Emit(testEvent{ID: i})
 		}
 		b.Advance()
-		col := collect(r)
+		col := collect(&r)
 		if len(col) != perFrame {
 			t.Fatalf("frame %d: got %d events, want %d", f, len(col), perFrame)
 		}
@@ -353,9 +357,10 @@ func TestEmitAndWaitConvenience(t *testing.T) {
 	go func() {
 		// Advance first so EmitAndWait waits on events in this frame.
 		b.Advance()
-		for range r.Iter() {
+		r.ForEach(func(e int) bool {
 			// consume but don't cancel
-		}
+			return true
+		})
 	}()
 
 	// EmitAndWait returns false (not cancelled).
@@ -400,12 +405,13 @@ func TestReaderEarlyStopDecrementsPending(t *testing.T) {
 
 	// Stop early after first event; pending for the second should be decremented by the reader as well.
 	i := 0
-	for range r.Iter() {
+	r.ForEach(func(e int) bool {
 		i++
 		if i == 1 {
-			break
+			return false // stop early
 		}
-	}
+		return true
+	})
 
 	// No more readers this frame -> CompleteNoReader should complete both events.
 	b.CompleteNoReader()
@@ -453,10 +459,11 @@ func TestConcurrentReadersAndWriters(t *testing.T) {
 	for range 6 {
 		time.Sleep(2 * time.Millisecond)
 		b.Advance()
-		for v := range r.Iter() {
+		r.ForEach(func(v int) bool {
 			seen[v] = struct{}{}
 			total++
-		}
+			return true
+		})
 		b.CompleteNoReader()
 		if total >= writers*perWriter {
 			break
@@ -467,9 +474,10 @@ func TestConcurrentReadersAndWriters(t *testing.T) {
 	// Drain remaining
 	for range 2 {
 		b.Advance()
-		for range r.Iter() {
+		r.ForEach(func(v int) bool {
 			total++
-		}
+			return true
+		})
 		b.CompleteNoReader()
 	}
 
@@ -520,33 +528,33 @@ func TestCancelFromMultipleReadersOnlySetsFlagOnce(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		for range r1.Iter() {
+		r1.ForEach(func(e int) bool {
 			ready <- struct{}{}
 			<-proceed
 			r1.Cancel()
 			cancels.Add(1)
-			break
-		}
+			return false // stop
+		})
 	}()
 	go func() {
 		defer wg.Done()
-		for range r2.Iter() {
+		r2.ForEach(func(e int) bool {
 			ready <- struct{}{}
 			<-proceed
 			if !r2.IsCancelled() {
 				r2.Cancel()
 				cancels.Add(1)
 			}
-			break
-		}
+			return false // stop
+		})
 	}()
 	go func() {
 		defer wg.Done()
-		for range r3.Iter() {
+		r3.ForEach(func(e int) bool {
 			ready <- struct{}{}
 			<-proceed
-			break
-		}
+			return false // stop
+		})
 	}()
 
 	for range 3 {

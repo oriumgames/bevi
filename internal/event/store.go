@@ -158,16 +158,12 @@ func (s *store[T]) drain() []T {
 	return out
 }
 
-// snapshotEntries returns a copy of the read entries slice for safe external iteration.
-// Minor perf tweak: avoid allocation on empty.
+// snapshotEntries returns the current read entries slice without copying.
+// Callers must treat the returned slice as read-only and should not retain it
+// across Advance(), as the store may recycle or mutate entries at frame boundaries.
 func (s *store[T]) snapshotEntries() []*entry[T] {
 	s.mu.RLock()
-	if len(s.readEnt) == 0 {
-		s.mu.RUnlock()
-		return nil
-	}
-	out := make([]*entry[T], len(s.readEnt))
-	copy(out, s.readEnt)
+	out := s.readEnt
 	s.mu.RUnlock()
 	return out
 }

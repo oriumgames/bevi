@@ -152,14 +152,15 @@ Iterate per event (fresh query per pass):
 ```go
 //bevi:system Update Writes={A}
 func Apply(reader bevi.EventReader[E], flt ecs.Filter1[A]) {
-    for range reader.Iter() {
+    reader.ForEach(func(e E) bool {
         q := flt.Query() // new cursor each time
         for q.Next() {
             a := q.Get()
             // mutate a
         }
         // fully iterated -> no Close()
-    }
+        return true // continue to next event
+    })
 }
 ```
 
@@ -265,13 +266,14 @@ A `bevi.EventBus` delivers events from writers to readers frame-by-frame:
   - `EmitMany([]T)` bulk emit with fewer allocations
 
 - Readers:
-  - `Iter()` returns a rangefunc iterator (Go 1.22+):
+  - `ForEach(func(T) bool)` is the zero-allocation way to iterate events:
     ```go
-    for ev := range reader.Iter() {
+    reader.ForEach(func(ev MyEvent) bool {
         // optional cancellation
         reader.Cancel()
         if reader.IsCancelled() { /* react */ }
-    }
+        return true // return false to stop
+    })
     ```
   - `Drain()`, `DrainTo(buf)` special cases for batch extraction (when used, writers rely on `CompleteNoReader()` to finalize)
 
@@ -319,7 +321,7 @@ See `./example/test`. It demonstrates:
 
 - Re-run the generator whenever you add/change `//bevi:system` or `//bevi:filter` lines or when parameter types change.
 - Pointer-marked queries (`*ecs.QueryN[...]`) are treated as WRITE access; non-pointer queries as READ.
-- `Drain()/DrainTo()` don’t register readers; writers will be finalized by `CompleteNoReader()`. Prefer `Iter()` for normal consumption.
+- `Drain()/DrainTo()` don’t register readers; writers will be finalized by `CompleteNoReader()`. Prefer `ForEach()` for normal consumption.
 - If you register systems manually, ensure you correctly describe access in `SystemMeta.Access` to unlock safe parallelism.
 - If multiple packages contain systems, run the generator once; it will emit a `bevi_gen.go` per package. Call `AddSystems` for each package’s `Systems` function.
 - For reliable timing, use `Every` to gate costly systems rather than `time.Sleep` inside the system.
@@ -354,7 +356,7 @@ Events
 - `type EventWriter[T]`
   - `Emit(T)`, `EmitResult(T) EventResult[T]`, `EmitAndWait(ctx, T) bool`, `EmitMany([]T)`
 - `type EventReader[T]`
-  - `Iter() func(func(T) bool)`, `Cancel()`, `IsCancelled()`, `Drain() []T`, `DrainTo([]T) int`
+  - `ForEach(func(T) bool)`, `Cancel()`, `IsCancelled()`, `Drain() []T`, `DrainTo([]T) int`
 - `type EventResult[T]`
   - `Valid() bool`, `Cancelled() bool`, `Wait(ctx) bool`, `WaitCancelled(ctx) bool`
 - `WithEventBus(ctx, *EventBus) context.Context`, `EventBusFrom(ctx) *EventBus`

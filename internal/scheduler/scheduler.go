@@ -10,18 +10,63 @@ import (
 	"time"
 )
 
+// job is an internal struct for dispatching system execution to the worker pool.
+type job struct {
+	ctx  context.Context
+	sys  *System
+	w    any
+	diag Diagnostics
+	wg   *sync.WaitGroup
+}
+
+// systemSorter implements sort.Interface for []*System to avoid closure allocations.
+type systemSorter struct {
+	systems []*System
+}
+
+func (s *systemSorter) Len() int           { return len(s.systems) }
+func (s *systemSorter) Swap(i, j int)      { s.systems[i], s.systems[j] = s.systems[j], s.systems[i] }
+func (s *systemSorter) Less(i, j int) bool { return s.systems[i].Name < s.systems[j].Name }
+
 // Scheduler manages system execution order and parallelization.
 type Scheduler struct {
 	mu      sync.RWMutex
 	systems map[Stage][]*System
 	batches map[Stage][][]*System
+
+	// Worker pool
+	maxWorkers    int
+	work          chan *job
+	workersWG     sync.WaitGroup
+	startOnce     sync.Once
+	jobPool       sync.Pool
+	waitGroupPool sync.Pool
+
+	// Reusable data structures to avoid allocations
+	sorter     *systemSorter
+	nameToSys  map[string]*System
+	setMembers map[string][]*System
+	outgoing   map[*System]map[*System]bool
+	inDegree   map[*System]int
 }
 
 // NewScheduler creates a new scheduler.
 func NewScheduler() *Scheduler {
 	return &Scheduler{
-		systems: make(map[Stage][]*System),
-		batches: make(map[Stage][][]*System),
+		systems:    make(map[Stage][]*System),
+		batches:    make(map[Stage][][]*System),
+		maxWorkers: max(runtime.GOMAXPROCS(0), 1),
+		jobPool: sync.Pool{
+			New: func() any { return new(job) },
+		},
+		waitGroupPool: sync.Pool{
+			New: func() any { return new(sync.WaitGroup) },
+		},
+		sorter:     &systemSorter{},
+		nameToSys:  make(map[string]*System),
+		setMembers: make(map[string][]*System),
+		outgoing:   make(map[*System]map[*System]bool),
+		inDegree:   make(map[*System]int),
 	}
 }
 
@@ -54,6 +99,20 @@ func (s *Scheduler) Build() error {
 
 	newBatches := make(map[Stage][][]*System, len(s.systems))
 	for stage, systems := range s.systems {
+		// Clear reusable data structures for this stage.
+		for k := range s.nameToSys {
+			delete(s.nameToSys, k)
+		}
+		for k := range s.setMembers {
+			delete(s.setMembers, k)
+		}
+		for k := range s.outgoing {
+			delete(s.outgoing, k)
+		}
+		for k := range s.inDegree {
+			delete(s.inDegree, k)
+		}
+
 		// Validate dependencies first (detect cycles)
 		if _, err := s.topologicalSort(systems); err != nil {
 			return fmt.Errorf("stage %v: %w", stage, err)
@@ -66,21 +125,48 @@ func (s *Scheduler) Build() error {
 	return nil
 }
 
+// Startup initializes the persistent worker pool. It is safe to call multiple times.
+// It is called automatically by the first RunStage execution.
+func (s *Scheduler) Startup() {
+	s.startOnce.Do(func() {
+		s.work = make(chan *job)
+		s.workersWG.Add(s.maxWorkers)
+		for i := 0; i < s.maxWorkers; i++ {
+			go func() {
+				defer s.workersWG.Done()
+				for j := range s.work {
+					s.runSystem(j.ctx, j.sys, j.w, j.diag)
+					j.wg.Done()
+					// Reset job and return to pool to avoid allocations.
+					*j = job{} // j.wg is overwritten on next Get, no need to nil it.
+					s.jobPool.Put(j)
+				}
+			}()
+		}
+	})
+}
+
+// Shutdown gracefully stops the worker pool and waits for all workers to exit.
+func (s *Scheduler) Shutdown() {
+	// Check if the pool was ever started
+	if s.work == nil {
+		return
+	}
+	close(s.work)
+	s.workersWG.Wait()
+}
+
 // topologicalSort orders systems based on Before/After constraints (deterministic).
 func (s *Scheduler) topologicalSort(systems []*System) ([]*System, error) {
-	// Build name and set maps
-	nameToSys := make(map[string]*System, len(systems))
-	setMembers := make(map[string][]*System)
+	// Build name and set maps using reusable fields.
 	for _, sys := range systems {
-		nameToSys[sys.Name] = sys
+		s.nameToSys[sys.Name] = sys
 		if sys.Meta.Set != "" {
-			setMembers[sys.Meta.Set] = append(setMembers[sys.Meta.Set], sys)
+			s.setMembers[sys.Meta.Set] = append(s.setMembers[sys.Meta.Set], sys)
 		}
 	}
 
-	// Build adjacency and indegree
-	outgoing := make(map[*System]map[*System]bool, len(systems))
-	inDegree := make(map[*System]int, len(systems))
+	// Build adjacency and indegree using reusable fields.
 	ensure := func(m map[*System]map[*System]bool, k *System) map[*System]bool {
 		if m[k] == nil {
 			m[k] = make(map[*System]bool)
@@ -88,22 +174,22 @@ func (s *Scheduler) topologicalSort(systems []*System) ([]*System, error) {
 		return m[k]
 	}
 	for _, sys := range systems {
-		outgoing[sys] = make(map[*System]bool)
-		inDegree[sys] = 0
+		s.outgoing[sys] = make(map[*System]bool)
+		s.inDegree[sys] = 0
 	}
 	addEdge := func(a, b *System) {
-		if !outgoing[a][b] {
-			ensure(outgoing, a)[b] = true
-			inDegree[b]++
+		if !s.outgoing[a][b] {
+			ensure(s.outgoing, a)[b] = true
+			s.inDegree[b]++
 		}
 	}
 
 	for _, sys := range systems {
 		// sys must run before targets
 		for _, target := range sys.Meta.Before {
-			if targetSys, ok := nameToSys[target]; ok {
+			if targetSys, ok := s.nameToSys[target]; ok {
 				addEdge(sys, targetSys)
-			} else if members, ok := setMembers[target]; ok {
+			} else if members, ok := s.setMembers[target]; ok {
 				for _, member := range members {
 					addEdge(sys, member)
 				}
@@ -111,9 +197,9 @@ func (s *Scheduler) topologicalSort(systems []*System) ([]*System, error) {
 		}
 		// sys must run after deps
 		for _, dep := range sys.Meta.After {
-			if depSys, ok := nameToSys[dep]; ok {
+			if depSys, ok := s.nameToSys[dep]; ok {
 				addEdge(depSys, sys)
-			} else if members, ok := setMembers[dep]; ok {
+			} else if members, ok := s.setMembers[dep]; ok {
 				for _, member := range members {
 					addEdge(member, sys)
 				}
@@ -124,7 +210,7 @@ func (s *Scheduler) topologicalSort(systems []*System) ([]*System, error) {
 	// Zero in-degree queue (deterministic by name)
 	var zero []*System
 	for _, sys := range systems {
-		if inDegree[sys] == 0 {
+		if s.inDegree[sys] == 0 {
 			zero = append(zero, sys)
 		}
 	}
@@ -136,9 +222,9 @@ func (s *Scheduler) topologicalSort(systems []*System) ([]*System, error) {
 		zero = zero[1:]
 		result = append(result, cur)
 
-		for neigh := range outgoing[cur] {
-			inDegree[neigh]--
-			if inDegree[neigh] == 0 {
+		for neigh := range s.outgoing[cur] {
+			s.inDegree[neigh]--
+			if s.inDegree[neigh] == 0 {
 				zero = append(zero, neigh)
 			}
 		}
@@ -155,19 +241,9 @@ func (s *Scheduler) topologicalSort(systems []*System) ([]*System, error) {
 // computeBatches groups systems into parallel batches based on access conflicts
 // while respecting Before/After constraints using DAG levels.
 func (s *Scheduler) computeBatches(systems []*System) [][]*System {
-	// Build name and set indexes
-	nameToSys := make(map[string]*System, len(systems))
-	setMembers := make(map[string][]*System)
-	for _, sys := range systems {
-		nameToSys[sys.Name] = sys
-		if sys.Meta.Set != "" {
-			setMembers[sys.Meta.Set] = append(setMembers[sys.Meta.Set], sys)
-		}
-	}
-
-	// Build dependency graph
-	outgoing := make(map[*System]map[*System]bool, len(systems))
-	inDegree := make(map[*System]int, len(systems))
+	// Rebuild dependency graph for this stage using shared maps
+	// nameToSys and setMembers were already populated by topologicalSort
+	// We must re-calculate outgoing and inDegree as topologicalSort consumes them
 	ensure := func(m map[*System]map[*System]bool, k *System) map[*System]bool {
 		if m[k] == nil {
 			m[k] = make(map[*System]bool)
@@ -175,22 +251,22 @@ func (s *Scheduler) computeBatches(systems []*System) [][]*System {
 		return m[k]
 	}
 	for _, sys := range systems {
-		outgoing[sys] = make(map[*System]bool)
-		inDegree[sys] = 0
+		s.outgoing[sys] = make(map[*System]bool)
+		s.inDegree[sys] = 0
 	}
 	addDep := func(a, b *System) {
 		// a -> b (b depends on a)
-		if !outgoing[a][b] {
-			ensure(outgoing, a)[b] = true
-			inDegree[b]++
+		if !s.outgoing[a][b] {
+			ensure(s.outgoing, a)[b] = true
+			s.inDegree[b]++
 		}
 	}
 	for _, sys := range systems {
 		// sys must run after deps
 		for _, dep := range sys.Meta.After {
-			if depSys, ok := nameToSys[dep]; ok {
+			if depSys, ok := s.nameToSys[dep]; ok {
 				addDep(depSys, sys)
-			} else if members, ok := setMembers[dep]; ok {
+			} else if members, ok := s.setMembers[dep]; ok {
 				for _, m := range members {
 					addDep(m, sys)
 				}
@@ -198,9 +274,9 @@ func (s *Scheduler) computeBatches(systems []*System) [][]*System {
 		}
 		// targets must run after sys
 		for _, target := range sys.Meta.Before {
-			if tgtSys, ok := nameToSys[target]; ok {
+			if tgtSys, ok := s.nameToSys[target]; ok {
 				addDep(sys, tgtSys)
-			} else if members, ok := setMembers[target]; ok {
+			} else if members, ok := s.setMembers[target]; ok {
 				for _, m := range members {
 					addDep(sys, m)
 				}
@@ -211,7 +287,7 @@ func (s *Scheduler) computeBatches(systems []*System) [][]*System {
 	// Initialize ready list (zero in-degree), deterministic by name
 	var ready []*System
 	for _, sys := range systems {
-		if inDegree[sys] == 0 {
+		if s.inDegree[sys] == 0 {
 			ready = append(ready, sys)
 		}
 	}
@@ -226,7 +302,7 @@ func (s *Scheduler) computeBatches(systems []*System) [][]*System {
 			// Pick any node with positive indegree to break a cycle
 			var any *System
 			for _, sys := range systems {
-				if inDegree[sys] > 0 {
+				if s.inDegree[sys] > 0 {
 					any = sys
 					break
 				}
@@ -274,20 +350,20 @@ func (s *Scheduler) computeBatches(systems []*System) [][]*System {
 				}
 			}
 			for _, sys := range batch {
-				for neigh := range outgoing[sys] {
-					inDegree[neigh]--
-					if inDegree[neigh] == 0 {
+				for neigh := range s.outgoing[sys] {
+					s.inDegree[neigh]--
+					if s.inDegree[neigh] == 0 {
 						nextReadySet[neigh] = true
 					}
 				}
 				// mark removed
-				inDegree[sys] = -1
+				s.inDegree[sys] = -1
 				remaining--
 			}
 
 			ready = ready[:0]
 			for n := range nextReadySet {
-				if inDegree[n] == 0 {
+				if s.inDegree[n] == 0 {
 					ready = append(ready, n)
 				}
 			}
@@ -309,51 +385,39 @@ type Diagnostics interface {
 
 // RunStage executes all systems for the given stage.
 func (s *Scheduler) RunStage(ctx context.Context, stage Stage, w any, diag Diagnostics) {
+	// Ensure the worker pool is running. This is safe to call multiple times
+	s.Startup()
+
 	s.mu.RLock()
 	batches := s.batches[stage]
 	s.mu.RUnlock()
 
-	// Bounded worker pool reused across batches to reduce goroutine churn
-	type job struct {
-		sys  *System
-		done func()
-	}
-
-	work := make(chan job)
-	maxWorkers := max(runtime.GOMAXPROCS(0), 1)
-
-	var workersWG sync.WaitGroup
-	workersWG.Add(maxWorkers)
-	for range maxWorkers {
-		go func() {
-			defer workersWG.Done()
-			for j := range work {
-				s.runSystem(ctx, j.sys, w, diag)
-				j.done()
-			}
-		}()
-	}
-	defer func() {
-		close(work)
-		workersWG.Wait()
-	}()
-
 	for _, batch := range batches {
-		sort.Slice(batch, func(i, j int) bool { return batch[i].Name < batch[j].Name })
 		// Allow cancellation between batches
 		if err := ctx.Err(); err != nil {
 			return
 		}
 
-		var batchWG sync.WaitGroup
+		// Systems within a batch are dispatched in a deterministic (sorted) order
+		s.sorter.systems = batch
+		sort.Sort(s.sorter)
+
+		batchWG := s.waitGroupPool.Get().(*sync.WaitGroup)
 		for _, sys := range batch {
 			if !sys.ShouldRun(time.Now()) {
 				continue
 			}
 			batchWG.Add(1)
-			work <- job{sys: sys, done: batchWG.Done}
+			j := s.jobPool.Get().(*job)
+			j.ctx = ctx
+			j.sys = sys
+			j.w = w
+			j.diag = diag
+			j.wg = batchWG
+			s.work <- j
 		}
 		batchWG.Wait()
+		s.waitGroupPool.Put(batchWG)
 	}
 }
 

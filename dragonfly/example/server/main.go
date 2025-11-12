@@ -29,10 +29,11 @@ func main() {
 func DenyBlockBreak(
 	r bevi.EventReader[dragonfly.PlayerBlockBreak],
 ) {
-	for ev := range r.Iter() {
+	r.ForEach(func(ev dragonfly.PlayerBlockBreak) bool {
 		ev.Player.Message("You can't break blocks here.")
 		r.Cancel()
-	}
+		return true
+	})
 }
 
 //bevi:system Update Reads={dragonfly.Player}
@@ -40,7 +41,7 @@ func WelcomeOnJoin(
 	r bevi.EventReader[dragonfly.PlayerJoin],
 	f *ecs.Filter1[dragonfly.Player],
 ) {
-	for ev := range r.Iter() {
+	r.ForEach(func(ev dragonfly.PlayerJoin) bool {
 		// Greet the joining player
 		ev.Player.Message("Welcome to the server! Say \"count\" to see how many players are online.")
 
@@ -53,7 +54,8 @@ func WelcomeOnJoin(
 			}
 			p.Message(fmt.Sprintf("%s joined the server.", ev.Player.Name()))
 		}
-	}
+		return true
+	})
 }
 
 //bevi:system Update Reads={dragonfly.Player}
@@ -61,7 +63,7 @@ func FarewellOnQuit(
 	r bevi.EventReader[dragonfly.PlayerQuit],
 	f *ecs.Filter1[dragonfly.Player],
 ) {
-	for ev := range r.Iter() {
+	r.ForEach(func(ev dragonfly.PlayerQuit) bool {
 		// Announce to everyone else
 		q := f.Query()
 		for q.Next() {
@@ -71,7 +73,8 @@ func FarewellOnQuit(
 			}
 			p.Message(fmt.Sprintf("%s left the server.", ev.Player.Name()))
 		}
-	}
+		return true
+	})
 }
 
 //bevi:system Update Reads={dragonfly.Player}
@@ -81,9 +84,9 @@ func ChatFilterAndCount(
 ) {
 	const badWord = "badword" // trivial example; replace with your list or smarter checker
 
-	for ev := range r.Iter() {
+	r.ForEach(func(ev dragonfly.PlayerChat) bool {
 		if ev.Message == nil {
-			continue
+			return true // continue
 		}
 		msg := *ev.Message
 		lmsg := strings.ToLower(msg)
@@ -92,7 +95,7 @@ func ChatFilterAndCount(
 		if strings.Contains(lmsg, badWord) {
 			ev.Player.Message("Please keep chat clean.")
 			r.Cancel()
-			continue
+			return true // continue
 		}
 
 		// Respond to "count" message
@@ -102,7 +105,8 @@ func ChatFilterAndCount(
 			// suppress normal chat broadcast by cancelling the event
 			r.Cancel()
 		}
-	}
+		return true
+	})
 }
 
 //bevi:system Update Every=10s

@@ -73,20 +73,22 @@ func IncreaseMoney(
 
 //bevi:system Update After={"IncreaseMoney"} Writes={BonusEvent,Test}
 func BonusConsumer(reader bevi.EventReader[BonusEvent], filter *ecs.Filter1[Test]) {
-	for ev := range reader.Iter() {
+	reader.ForEach(func(ev BonusEvent) bool {
 		query := filter.Query()
 		for query.Next() {
 			test := query.Get()
 			test.Money += ev.Amount
 		}
-	}
+		return true
+	})
 }
 
 //bevi:system Update After={"Tick"}
 func TickLogger(reader bevi.EventReader[TickEvent]) {
-	for ev := range reader.Iter() {
+	reader.ForEach(func(ev TickEvent) bool {
 		_ = ev.When
-	}
+		return true
+	})
 }
 
 //bevi:system Update After={"IncreaseMoney","BonusConsumer"} Every=1s
@@ -103,10 +105,11 @@ func PrintMoney(query ecs.Query1[Test]) {
 
 //bevi:system Update
 func CancelConsumer(reader bevi.EventReader[CancelEvent]) {
-	for ev := range reader.Iter() {
+	reader.ForEach(func(ev CancelEvent) bool {
 		fmt.Println("consumer: received event:", ev.Msg, "- cancelling")
 		reader.Cancel()
-	}
+		return true
+	})
 }
 
 //bevi:system Update After={"PrintMoney"} Every=1500ms

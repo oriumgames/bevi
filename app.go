@@ -12,6 +12,10 @@ import (
 	"github.com/oriumgames/bevi/internal/scheduler"
 )
 
+// App is the primary entry point for constructing and running a Bevi
+// application. It owns the ECS world, the system scheduler, the per-frame
+// event bus and the diagnostics adapter. All configuration methods return *App
+// to enable chaining before calling Run().
 type App struct {
 	world  *ecs.World
 	sched  *scheduler.Scheduler
@@ -19,6 +23,8 @@ type App struct {
 	diag   *internalDiagnostics
 }
 
+// NewApp constructs a new App with an empty ECS world, a scheduler and a fresh
+// event bus. By default a no-op diagnostics implementation is installed.
 func NewApp() *App {
 	w := ecs.NewWorld()
 	bus := event.NewBus()
@@ -32,11 +38,15 @@ func NewApp() *App {
 	}
 }
 
+// AddPlugin invokes the given Plugin's Build method, allowing the plugin to
+// register systems, resources or other setup. The App is returned for chaining.
 func (a *App) AddPlugin(p Plugin) *App {
 	p.Build(a)
 	return a
 }
 
+// AddPlugins invokes AddPlugin for each Plugin in the slice.
+// The App is returned for chaining.
 func (a *App) AddPlugins(l []Plugin) *App {
 	for _, p := range l {
 		p.Build(a)
@@ -44,6 +54,10 @@ func (a *App) AddPlugins(l []Plugin) *App {
 	return a
 }
 
+// AddSystem registers a single system function for the specified stage with
+// the provided scheduling metadata. The supplied fn must accept (context.Context,
+// *ecs.World). The meta.Access field is used to compute parallel batches and
+// dependency conflict checks.
 func (a *App) AddSystem(stage Stage, name string, meta SystemMeta, fn func(context.Context, *ecs.World)) *App {
 	sys := &scheduler.System{
 		Name:  name,
@@ -57,16 +71,24 @@ func (a *App) AddSystem(stage Stage, name string, meta SystemMeta, fn func(conte
 	return a
 }
 
+// AddSystems executes a registration callback that may add multiple systems
+// (commonly a generated Systems function). Returns the App for chaining.
 func (a *App) AddSystems(reg func(*App)) *App {
 	reg(a)
 	return a
 }
 
+// SetDiagnostics installs an implementation to receive system execution timing
+// and error diagnostics. Passing a nil Diagnostics leaves the previous value
+// in place (no change). Returns the App for chaining.
 func (a *App) SetDiagnostics(d Diagnostics) *App {
 	a.diag.d = d
 	return a
 }
 
+// Run builds the scheduler, then enters the main loop executing stages in
+// order. It listens for SIGINT/SIGTERM and cancels the root context to exit.
+// Each frame advances events after all Update-stage systems have run.
 func (a *App) Run() {
 	if err := a.sched.Build(); err != nil {
 		log.Fatalf("scheduler build failed: %v", err)

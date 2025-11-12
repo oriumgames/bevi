@@ -82,9 +82,10 @@ func main() {
 
 //bevi:system Update
 func HelloOnJoin(r bevi.EventReader[dragonfly.PlayerJoin]) {
-	for ev := range r.Iter() {
+	r.ForEach(func(ev dragonfly.PlayerJoin) bool {
 		ev.Player.Message("Welcome to the server!")
-	}
+		return true
+	})
 }
 ```
 

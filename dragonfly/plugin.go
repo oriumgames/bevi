@@ -10,10 +10,12 @@ import (
 	"github.com/oriumgames/bevi"
 )
 
+// Plugin bridges Dragonfly into Bevi.
 type Plugin struct {
 	cfg server.Config
 }
 
+// NewPlugin constructs a Plugin.
 func NewPlugin(cfg server.Config) *Plugin {
 	return &Plugin{
 		cfg: cfg,
@@ -58,10 +60,10 @@ func emitPlayerJoin(
 	r bevi.EventReader[playerCreate],
 	out bevi.EventWriter[PlayerJoin],
 ) {
-	for ev := range r.Iter() {
+	r.ForEach(func(ev playerCreate) bool {
 		id := ev.p.UUID()
 		if _, ok := srv.Get().Player(id); ok {
-			continue
+			return true
 		}
 
 		e := w.NewEntity()
@@ -76,7 +78,8 @@ func emitPlayerJoin(
 		out.Emit(PlayerJoin{
 			Player: ip,
 		})
-	}
+		return true
+	})
 }
 
 //bevi:system PreUpdate Set="dragonfly"
@@ -86,10 +89,10 @@ func emitPlayerQuit(
 	r bevi.EventReader[playerRemove],
 	out bevi.EventWriter[PlayerQuit],
 ) {
-	for ev := range r.Iter() {
+	r.ForEach(func(ev playerRemove) bool {
 		ip, ok := srv.Get().Player(ev.id)
 		if !ok {
-			continue
+			return true
 		}
 
 		out.Emit(PlayerQuit{
@@ -98,5 +101,6 @@ func emitPlayerQuit(
 
 		srv.Get().removePlayer(ip)
 		w.RemoveEntity(ip.e)
-	}
+		return true
+	})
 }

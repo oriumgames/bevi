@@ -1,7 +1,5 @@
 package event
 
-import "iter"
-
 // Reader iterates over the current read buffer snapshot (the previous frame's writes).
 // It supports per-event cancellation via Cancel() during iteration and exposes the
 // current event's cancellation state via IsCancelled(). For batch extraction, use
@@ -11,7 +9,7 @@ type Reader[T any] struct {
 	cur   *entry[T] // current entry for Cancel()/IsCancelled()
 }
 
-// Cancel marks the current event as cancelled. Call inside the Iter() callback.
+// Cancel marks the current event as cancelled. Call inside the ForEach() callback.
 // Cancellation is visible to writers via EventResult.Cancelled/Wait/WaitCancelled
 // and to other readers via IsCancelled while iterating the same event.
 func (r *Reader[T]) Cancel() {
@@ -23,7 +21,7 @@ func (r *Reader[T]) Cancel() {
 // IsCancelled reports whether the current event has been cancelled by any reader.
 // This can be used by readers to adapt how they process the current event or
 // decide behavior for subsequent events.
-// It is safe to call from within the Iter callback.
+// It is safe to call from within the ForEach callback.
 // If no iteration is active, it returns false.
 func (r *Reader[T]) IsCancelled() bool {
 	if r.cur == nil {
@@ -32,59 +30,68 @@ func (r *Reader[T]) IsCancelled() bool {
 	return r.cur.cancelled.Load()
 }
 
-// Iter returns a Go 1.22+ rangefunc iterator over the current read buffer snapshot.
+// ForEach iterates the current read buffer snapshot with a callback.
+// This is the recommended, zero-allocation iteration method. The callback
+// should return `false` to stop iteration early.
+//
 // Example:
 //
-//	for e := range reader.Iter() {
+//	reader.ForEach(func(e MyEvent) bool {
 //	    if shouldCancel(e) {
-//	        reader.Cancel() // makes cancellation visible immediately
+//	        reader.Cancel()
 //	    }
-//	    if reader.IsCancelled() {
-//	        // adapt behavior for e, or decide on subsequent events
-//	    }
-//	}
+//	    return true // return false to stop
+//	})
 //
-// Behavior:
-//   - The iterator registers this reader for completion only on entries that are not
-//     already completed.
-//   - For each processed entry, it decrements the reader count to potentially complete
-//     the event for waiting writers.
-//   - If the consumer stops early (yield returns false), any remaining registered entries
-//     are decremented so writers won't wait forever.
-func (r *Reader[T]) Iter() iter.Seq[T] {
+// It safely handles completion tracking, even with early exits.
+func (r *Reader[T]) ForEach(yield func(T) bool) {
 	entries := r.store.snapshotEntries()
+	if len(entries) == 0 {
+		return
+	}
 
-	// Register this reader only for entries that haven't already completed.
-	var registered []*entry[T]
+	// First, register this reader for all non-completed entries. This is done
+	// in a separate pass to ensure that even if the loop breaks early, all
+	// events that *could* have been seen are accounted for.
 	for _, ent := range entries {
-		if ent.IsDone() {
-			// already completed; skip registration
-			continue
+		if !ent.IsDone() {
+			ent.pending.Add(1)
 		}
-		ent.pending.Add(1)
-		registered = append(registered, ent)
 	}
 
-	return func(yield func(T) bool) {
-		// Iterate registered entries and decrement immediately after processing each.
-		for i, ent := range registered {
-			r.cur = ent
-			cont := yield(ent.val)
-			ent.decAndMaybeClose()
-			if !cont {
-				// Decrement any remaining entries we registered but didn't process.
-				for j := i + 1; j < len(registered); j++ {
-					registered[j].decAndMaybeClose()
-				}
-				break
-			}
+	// Now, iterate and process.
+	for _, ent := range entries {
+		r.cur = ent
+		cont := true
+		// Only yield if the entry is not done; otherwise, just clean it up.
+		if !ent.IsDone() {
+			cont = yield(ent.val)
 		}
-		r.cur = nil
+		ent.decAndMaybeClose()
+		if !cont {
+			// If we stopped early, we still need to decrement the pending count
+			// for all the remaining entries we registered but didn't process.
+			// The current entry `ent` has already been decremented.
+			idx := -1
+			for i, e := range entries {
+				if e == ent {
+					idx = i
+					break
+				}
+			}
+			if idx != -1 {
+				for i := idx + 1; i < len(entries); i++ {
+					entries[i].decAndMaybeClose()
+				}
+			}
+			break
+		}
 	}
+	r.cur = nil
 }
 
 // Drain returns the values of the current read buffer and clears it.
-// Prefer Iter() for proper completion semantics; Drain is provided for special cases
+// Prefer ForEach() for proper completion semantics; Drain is provided for special cases
 // and does not register readers, so writers may rely on CompleteNoReader to resolve.
 func (r Reader[T]) Drain() []T {
 	return r.store.drain()
@@ -93,7 +100,7 @@ func (r Reader[T]) Drain() []T {
 // DrainTo fills the provided buffer with events from the current read buffer and clears it.
 // It returns the number of events written to dst. If dst is smaller than the number
 // of available events, only the first len(dst) are copied.
-// Prefer Iter() for proper completion semantics; DrainTo is for special cases.
+// Prefer ForEach() for proper completion semantics; DrainTo is for special cases.
 func (r Reader[T]) DrainTo(dst []T) int {
 	if len(dst) == 0 {
 		return 0

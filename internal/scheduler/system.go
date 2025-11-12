@@ -94,6 +94,7 @@ type System struct {
 	Meta        SystemMeta
 	lastRunUnix atomic.Int64
 	LastRun     time.Time
+	nextRunUnix atomic.Int64
 }
 
 // ShouldRun checks if the system should run based on its Every constraint.
@@ -101,25 +102,61 @@ func (s *System) ShouldRun(now time.Time) bool {
 	if s.Meta.Every == 0 {
 		return true
 	}
-	// Fast, lock-free read using atomic timestamp
+
+	next := s.nextRunUnix.Load()
+	if next != 0 {
+		return now.UnixNano() >= next
+	}
+
+	// First-time check (next == 0). Initialize from last run time to preserve
+	// existing behavior for systems that might have LastRun set manually.
 	lastUnix := s.lastRunUnix.Load()
 	var last time.Time
 	if lastUnix != 0 {
 		last = time.Unix(0, lastUnix)
 	} else {
-		// Fallback for code paths that set LastRun directly (e.g., tests)
 		last = s.LastRun
-		if !last.IsZero() {
-			s.lastRunUnix.Store(last.UnixNano())
-		}
 	}
-	return now.Sub(last) >= s.Meta.Every
+
+	if last.IsZero() {
+		// No last run time, so it runs now. nextRunUnix will be set in MarkRun.
+		return true
+	}
+
+	// Has a last run time. Schedule the *correct* first drift-free time.
+	firstDeadline := last.Add(s.Meta.Every).UnixNano()
+	s.nextRunUnix.Store(firstDeadline)
+
+	return now.UnixNano() >= firstDeadline
 }
 
 // MarkRun updates the last run timestamp.
 func (s *System) MarkRun(now time.Time) {
 	s.lastRunUnix.Store(now.UnixNano())
 	s.LastRun = now
+
+	if s.Meta.Every <= 0 {
+		return
+	}
+
+	nowNanos := now.UnixNano()
+	lastScheduled := s.nextRunUnix.Load()
+
+	// If this was the first run for a system with no initial LastRun,
+	// lastScheduled will be 0. We base the next run on now.
+	if lastScheduled == 0 {
+		lastScheduled = nowNanos
+	}
+
+	// Drift-free update: the next deadline is calculated from the previous deadline.
+	next := lastScheduled + s.Meta.Every.Nanoseconds()
+
+	// Reset schedule if we are lagging to prevent catch-up bursts.
+	if next < nowNanos {
+		next = nowNanos + s.Meta.Every.Nanoseconds()
+	}
+
+	s.nextRunUnix.Store(next)
 }
 
 // Global compact type index for reflect.Type -> small int mapping.
