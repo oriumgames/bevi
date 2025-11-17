@@ -1,6 +1,6 @@
 package dragonfly
 
-//go:generate go run github.com/oriumgames/bevi/cmd/gen@v0.1.1
+//go:generate go run github.com/oriumgames/bevi/cmd/gen@v0.1.2
 
 import (
 	"context"
