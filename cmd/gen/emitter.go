@@ -406,6 +406,7 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 		// Wrapper: preserve original parameter order
 		w("\t\tapp.AddSystem(bevi.%s, %q, meta, func(ctx context.Context, w *ecs.World) {\n", sys.Stage, sys.SystemName)
 		var args []string
+		var closes []string
 		tmpIdx := 0
 		for _, p := range sys.Params {
 			switch p.Kind {
@@ -448,11 +449,13 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 					tmpIdx++
 					w("\t\t\t%s := %s.Query()\n", tmp, name)
 					args = append(args, "&"+tmp)
+					closes = append(closes, tmp)
 				} else {
 					tmp := fmt.Sprintf("_q%d", tmpIdx)
 					tmpIdx++
 					w("\t\t\t%s := %s.Query()\n", tmp, name)
 					args = append(args, tmp)
+					closes = append(closes, tmp)
 				}
 			case ParamECSFilter:
 				// Lookup helper for filter param and pass it directly
@@ -503,6 +506,9 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 			}
 		}
 		w("\t\t\t%s(%s)\n", sys.FuncName, strings.Join(args, ", "))
+		for _, c := range closes {
+			w("\t\t\tif %s.Next() { %s.Close() }\n", c, c)
+		}
 		w("\t\t})\n")
 		w("\t}\n\n")
 	}
