@@ -84,7 +84,6 @@ func emitPlayerJoin(
 
 //bevi:system PreUpdate Set="dragonfly"
 func emitPlayerQuit(
-	w *ecs.World,
 	srv ecs.Resource[Server],
 	r bevi.EventReader[playerRemove],
 	out bevi.EventWriter[PlayerQuit],
@@ -98,9 +97,19 @@ func emitPlayerQuit(
 		out.Emit(PlayerQuit{
 			Player: ip,
 		})
+		return true
+	})
+}
 
-		srv.Get().removePlayer(ip)
-		w.RemoveEntity(ip.e)
+//bevi:system PostUpdate Set="dragonfly"
+func finalizePlayerQuit(
+	w *ecs.World,
+	srv ecs.Resource[Server],
+	r bevi.EventReader[PlayerQuit],
+) {
+	r.ForEach(func(ev PlayerQuit) bool {
+		srv.Get().removePlayer(ev.Player)
+		w.RemoveEntity(ev.Player.e)
 		return true
 	})
 }
