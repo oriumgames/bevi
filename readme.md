@@ -12,14 +12,14 @@
 Add the runtime to your module:
 
 ```bash
-go get github.com/oriumgames/bevi@v0.1.2
+go get github.com/oriumgames/bevi@v0.1.1
 ```
 
 Optionally install the generator:
 
 ```bash
 # As a binary you can call directly (name depends on your shell/OS, shown here via go run)
-go install github.com/oriumgames/bevi/cmd/gen@v0.1.2
+go install github.com/oriumgames/bevi/cmd/gen@v0.1.1
 ```
 
 You can also run the generator without installing:
@@ -29,7 +29,7 @@ You can also run the generator without installing:
 go run ./cmd/gen -root .
 
 # From another module (using the latest published version)
-go run github.com/oriumgames/bevi/cmd/gen@v0.1.2 -root .
+go run github.com/oriumgames/bevi/cmd/gen@v0.1.1 -root .
 ```
 
 
@@ -66,7 +66,7 @@ func PrintCount(q ecs.Query1[Position]) {
 
 2) Generate glue code:
 ```bash
-go run github.com/oriumgames/bevi/cmd/gen@v0.1.2 -root . -write
+go run github.com/oriumgames/bevi/cmd/gen@v0.1.1 -root . -write
 ```
 This writes `bevi_gen.go` next to your files and creates a function:
 ```go
@@ -117,53 +117,6 @@ The generator also infers access from parameters:
 - `bevi.EventReader[E]` -> event READ access for E
 
 The generator synthesizes helpers once per package (mappers, filters, resources, event readers/writers), wires everything in a single `Systems(app *bevi.App)` function. It does not auto-close queries; only call `Close()` yourself when you exit iteration early.
-
-### Query lifetime
-
-- Fully iterated queries must NOT be closed.
-- If you exit iteration early, you MUST call `Close()` before leaving the loop.
-- If you need to iterate multiple times (e.g., once per event), create a fresh query each time (prefer passing an `ecs.FilterN[...]` and doing `q := filter.Query()` per pass).
-
-Full iteration (no Close):
-```go
-func System(q ecs.Query2[A,B]) {
-    for q.Next() {
-        a, b := q.Get()
-        _ = a; _ = b
-    }
-    // do not call q.Close() here
-}
-```
-
-Early exit (must Close):
-```go
-func System(q *ecs.Query2[A,B]) {
-    for q.Next() {
-        a, b := q.Get()
-        if stop(a, b) {
-            q.Close() // required when exiting early
-            break
-        }
-    }
-}
-```
-
-Iterate per event (fresh query per pass):
-```go
-//bevi:system Update Writes={A}
-func Apply(reader bevi.EventReader[E], flt ecs.Filter1[A]) {
-    reader.ForEach(func(e E) bool {
-        q := flt.Query() // new cursor each time
-        for q.Next() {
-            a := q.Get()
-            // mutate a
-        }
-        // fully iterated -> no Close()
-        return true // continue to next event
-    })
-}
-```
-
 
 ### Filter DSL for queries and filters
 

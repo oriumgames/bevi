@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mlange-42/ark/ecs"
+	"github.com/oriumgames/ark/ecs"
 	"github.com/oriumgames/bevi"
 )
 
-//go:generate go run github.com/oriumgames/bevi/cmd/gen@v0.1.2
+//go:generate go run github.com/oriumgames/bevi/cmd/gen@v0.1.1
 
 type Test struct {
 	Money int32

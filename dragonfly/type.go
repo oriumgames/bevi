@@ -6,7 +6,7 @@ import (
 	"github.com/df-mc/dragonfly/server"
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/google/uuid"
-	"github.com/mlange-42/ark/ecs"
+	"github.com/oriumgames/ark/ecs"
 )
 
 // Player wraps a dragonfly *player.Player with an associated ECS entity ID.

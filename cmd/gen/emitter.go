@@ -62,9 +62,9 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 
 	// Imports we may need based on observed params/metadata (path -> alias; empty alias means unaliased)
 	imports := map[string]string{
-		"github.com/oriumgames/bevi":   "",
-		"github.com/mlange-42/ark/ecs": "",
-		"context":                      "",
+		"github.com/oriumgames/bevi":    "",
+		"github.com/oriumgames/ark/ecs": "",
+		"context":                       "",
 	}
 	useTime := false
 

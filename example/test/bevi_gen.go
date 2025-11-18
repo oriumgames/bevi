@@ -5,9 +5,10 @@ package main
 
 import (
 	"context"
-	"github.com/mlange-42/ark/ecs"
-	"github.com/oriumgames/bevi"
 	"time"
+
+	"github.com/oriumgames/ark/ecs"
+	"github.com/oriumgames/bevi"
 )
 
 func Systems(app *bevi.App) {

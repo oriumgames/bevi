@@ -6,7 +6,7 @@ import (
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
-	"github.com/mlange-42/ark/ecs"
+	"github.com/oriumgames/ark/ecs"
 	"github.com/oriumgames/bevi"
 )
 

@@ -1,12 +1,12 @@
 package dragonfly
 
-//go:generate go run github.com/oriumgames/bevi/cmd/gen@v0.1.2
+//go:generate go run github.com/oriumgames/bevi/cmd/gen@v0.1.1
 
 import (
 	"context"
 
 	"github.com/df-mc/dragonfly/server"
-	"github.com/mlange-42/ark/ecs"
+	"github.com/oriumgames/ark/ecs"
 	"github.com/oriumgames/bevi"
 )
 
