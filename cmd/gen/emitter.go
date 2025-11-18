@@ -507,7 +507,7 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 		}
 		w("\t\t\t%s(%s)\n", sys.FuncName, strings.Join(args, ", "))
 		for _, c := range closes {
-			w("\t\t\tif %s.Next() { %s.Close() }\n", c, c)
+			w("\t\t\tif !%s.IsClosed() { %s.Close() }\n", c, c)
 		}
 		w("\t\t})\n")
 		w("\t}\n\n")
