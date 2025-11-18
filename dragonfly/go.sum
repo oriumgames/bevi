@@ -25,14 +25,13 @@ github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpO
 github.com/klauspost/compress v1.13.6/go.mod h1:/3/Vjq9QcHkK5uEr5lBEmyoZ1iFhe47etQ6QUkpK6sk=
 github.com/klauspost/compress v1.17.11 h1:In6xLpyWOi1+C7tXUUWv2ot1QvBjxevKAaI6IXrJmUc=
 github.com/klauspost/compress v1.17.11/go.mod h1:pMDklpSncoRMuLFrf1W9Ss9KT+0rH90U12bZKk7uwG0=
-github.com/mlange-42/ark v0.6.4/go.mod h1:gkS9cuklENPTmSjL2z4DcJgJsIVqF1yNwFlx48Hz/Sw=
 github.com/onsi/ginkgo v1.6.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
 github.com/onsi/ginkgo v1.7.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
 github.com/onsi/gomega v1.4.3/go.mod h1:ex+gbHU/CVuBBDIJjb2X0qEXbFg53c61hWP/1CpauHY=
 github.com/oriumgames/ark v0.6.4 h1:qECavZ/SWO6Qf9AQpfw2yjlstVS7zYGlt+KWU9FgooY=
 github.com/oriumgames/ark v0.6.4/go.mod h1:4MkLfIF/A+IbrG0ulFbmBSfC8tydelwvMNh55sXvhFo=
-github.com/oriumgames/bevi v0.1.4 h1:+FIDA2Tph2DtAUl4QziKKAp5AmnQJywPNgIiqGBxmz0=
-github.com/oriumgames/bevi v0.1.4/go.mod h1:c54E3+uqnqWCTTJtvuHMuY14bOuVEA7D7q8h5Caeg8w=
+github.com/oriumgames/bevi v0.1.5 h1:+eNlMA0nwWPyNOHt1eCmY18q9xtU/Il//JvER1t3VYQ=
+github.com/oriumgames/bevi v0.1.5/go.mod h1:c54E3+uqnqWCTTJtvuHMuY14bOuVEA7D7q8h5Caeg8w=
 github.com/sandertv/go-raknet v1.14.3-0.20250305181847-6af3e95113d6 h1:ZfK7NCzIDE+dzp5x6NIO4JDLsjsOxi762CNR1Obds2Q=
 github.com/sandertv/go-raknet v1.14.3-0.20250305181847-6af3e95113d6/go.mod h1:/yysjwfCXm2+2OY8mBazLzcxJ3irnylKCyG3FLgUPVU=
 github.com/sandertv/gophertunnel v1.50.0 h1:uoXQBWOD823T8snohPjIkFo+pcYrlIalEmcY2S1FUPM=
