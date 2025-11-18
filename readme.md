@@ -112,7 +112,7 @@ The generator also infers access from parameters:
 - `*ecs.MapN[T...]` -> component WRITE access on T...
 - `ecs.QueryN[T...]` -> READ access by default, WRITE access if you accept a pointer `*ecs.QueryN[...]` (write intent marker)
 - `*ecs.FilterN[T...]` -> no direct access (it is a builder used to produce queries)
-- `ecs.Resource[T]` -> resource READ by default (see overrides)
+- `ecs.Resource[T]` -> READ access by default, WRITE access if you accept a pointer `*ecs.Resource[T]` (write intent marker)
 - `bevi.EventWriter[E]` -> event WRITE access for E
 - `bevi.EventReader[E]` -> event READ access for E
 

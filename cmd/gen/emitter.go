@@ -311,7 +311,7 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 	for _, sys := range pkg.SysSpecs {
 		// Build AccessMeta inference with priority:
 		// - Default: Query -> READ; pointer-marked Query (*ecs.QueryN[T]) -> WRITE
-		//            Map -> WRITE; Resource -> ResREAD
+		//            Map -> WRITE; Resource -> ResREAD; pointer-marked Resource (*ecs.Resource[T]) -> ResWRITE
 		// - Event access from params
 		// - Explicit annotation overrides applied after defaults (Reads removes Write)
 		compRead := map[string]bool{}
@@ -345,8 +345,15 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 					compWrite[t] = true
 				}
 			case ParamECSResource:
-				for _, t := range p.ElemTypes {
-					resRead[t] = true
+				// Pointer-marked resources imply WRITE; non-pointer default to READ
+				if p.Pointer {
+					for _, t := range p.ElemTypes {
+						resWrite[t] = true
+					}
+				} else {
+					for _, t := range p.ElemTypes {
+						resRead[t] = true
+					}
 				}
 			}
 		}
@@ -488,7 +495,11 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 				if name == "" {
 					return nil, fmt.Errorf("internal: missing resource helper for %v", p.ElemTypes)
 				}
-				args = append(args, name)
+				if p.Pointer {
+					args = append(args, "&"+name)
+				} else {
+					args = append(args, name)
+				}
 			case ParamEventWriter:
 				name := findHelperName(helpers, p.HelperKey)
 				if name == "" {
