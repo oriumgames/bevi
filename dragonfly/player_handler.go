@@ -64,7 +64,6 @@ type playerHandler struct {
 
 	// internal
 	create bevi.EventWriter[playerCreate]
-	remove bevi.EventWriter[playerRemove]
 }
 
 func newPlayerHandler(ctx context.Context, app *bevi.App, srv *Server) *playerHandler {
@@ -114,7 +113,6 @@ func newPlayerHandler(ctx context.Context, app *bevi.App, srv *Server) *playerHa
 
 		// internal
 		create: bevi.WriterFor[playerCreate](app.Events()),
-		remove: bevi.WriterFor[playerRemove](app.Events()),
 	}
 }
 
@@ -583,9 +581,13 @@ func (h *playerHandler) HandleJoin(p *player.Player) {
 }
 
 func (h *playerHandler) HandleQuit(p *player.Player) {
-	h.remove.Emit(playerRemove{
-		id: p.UUID(),
-	})
+	ip, ok := h.srv.Player(p.UUID())
+	if !ok {
+		return
+	}
+	h.quit.EmitResult(PlayerQuit{
+		Player: ip,
+	}).Wait(context.Background())
 }
 
 func (h *playerHandler) HandleDiagnostics(p *player.Player, d session.Diagnostics) {

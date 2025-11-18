@@ -12,7 +12,6 @@ import (
 	"github.com/df-mc/dragonfly/server/session"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
-	"github.com/google/uuid"
 )
 
 // Player events.
@@ -267,8 +266,4 @@ type PlayerDiagnostics struct {
 // strictly internal, not for external consumption
 type playerCreate struct {
 	p *player.Player
-}
-
-type playerRemove struct {
-	id uuid.UUID
 }

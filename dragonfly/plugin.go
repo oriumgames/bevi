@@ -82,25 +82,6 @@ func emitPlayerJoin(
 	})
 }
 
-//bevi:system PreUpdate Set="dragonfly"
-func emitPlayerQuit(
-	srv ecs.Resource[Server],
-	r bevi.EventReader[playerRemove],
-	out bevi.EventWriter[PlayerQuit],
-) {
-	r.ForEach(func(ev playerRemove) bool {
-		ip, ok := srv.Get().Player(ev.id)
-		if !ok {
-			return true
-		}
-
-		out.Emit(PlayerQuit{
-			Player: ip,
-		})
-		return true
-	})
-}
-
 //bevi:system PostUpdate Set="dragonfly"
 func finalizePlayerQuit(
 	w *ecs.World,
