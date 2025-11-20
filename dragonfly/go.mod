@@ -7,7 +7,7 @@ require (
 	github.com/go-gl/mathgl v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/oriumgames/ark v0.6.4
-	github.com/oriumgames/bevi v0.1.5
+	github.com/oriumgames/bevi v0.1.6
 )
 
 require (
