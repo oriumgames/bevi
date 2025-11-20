@@ -36,7 +36,7 @@ type AccessMeta struct {
 	eventReadsSet  map[reflect.Type]struct{}
 	eventWritesSet map[reflect.Type]struct{}
 
-	// Compact bitset representation using a global TypeIndex
+	// Compact bitset representation using a TypeIndex
 	readsBits       *BitSet
 	writesBits      *BitSet
 	resReadsBits    *BitSet
@@ -46,8 +46,8 @@ type AccessMeta struct {
 }
 
 // PrepareSets precomputes lookup sets from the slice fields for faster conflict checks.
-// It also builds compact bitsets using a global TypeIndex for very fast set algebra.
-func (a *AccessMeta) PrepareSets() {
+// It also builds compact bitsets using the provided TypeIndex for very fast set algebra.
+func (a *AccessMeta) PrepareSets(ti *TypeIndex) {
 	build := func(dst *map[reflect.Type]struct{}, src []reflect.Type) {
 		if len(src) == 0 {
 			*dst = nil
@@ -73,7 +73,7 @@ func (a *AccessMeta) PrepareSets() {
 		}
 		b := &BitSet{}
 		for _, t := range src {
-			idx := globalTypeIndex.indexOf(t)
+			idx := ti.indexOf(t)
 			b.Set(idx)
 		}
 		return b
@@ -159,22 +159,19 @@ func (s *System) MarkRun(now time.Time) {
 	s.nextRunUnix.Store(next)
 }
 
-// Global compact type index for reflect.Type -> small int mapping.
-// This enables compact bitset representations for AccessMeta.
-var globalTypeIndex typeIndex
-
-type typeIndex struct {
+// TypeIndex maps reflect.Type -> small int for compact bitsets.
+type TypeIndex struct {
 	mu sync.Mutex
 	m  map[reflect.Type]int
 }
 
-func (ti *typeIndex) ensure() {
+func (ti *TypeIndex) ensure() {
 	if ti.m == nil {
 		ti.m = make(map[reflect.Type]int)
 	}
 }
 
-func (ti *typeIndex) indexOf(t reflect.Type) int {
+func (ti *TypeIndex) indexOf(t reflect.Type) int {
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
 	ti.ensure()

@@ -23,69 +23,111 @@ func (p *Player) Entity() ecs.Entity {
 }
 
 // Server embeds the underlying dragonfly *server.Server and maintains a
-// thread-safe registry mapping player UUIDs to wrapped Player instances.
+// thread-safe registry mapping player UUIDs to ECS entity IDs.
 // Lookups are provided by UUID, name, and XUID for convenience.
 type Server struct {
 	*server.Server
+
 	mu sync.RWMutex
-	p  map[uuid.UUID]*Player
+	pU map[string]ecs.Entity
+	pN map[string]ecs.Entity
+	pX map[string]ecs.Entity
+
+	mapper *ecs.Map1[Player]
+	world  *ecs.World
 }
 
 // newServer constructs a Server wrapper around an existing *server.Server.
-func newServer(srv *server.Server) *Server {
+func newServer(srv *server.Server, world *ecs.World, mapper *ecs.Map1[Player]) *Server {
 	return &Server{
 		Server: srv,
-		p:      make(map[uuid.UUID]*Player),
+		pU:     make(map[string]ecs.Entity),
+		pN:     make(map[string]ecs.Entity),
+		pX:     make(map[string]ecs.Entity),
+		mapper: mapper,
+		world:  world,
 	}
 }
 
 // addPlayer registers a Player in the UUID map (internal use during join).
 func (srv *Server) addPlayer(p *Player) {
 	srv.mu.Lock()
-	if srv.p == nil {
-		srv.p = make(map[uuid.UUID]*Player)
-	}
-	srv.p[p.UUID()] = p
+	srv.pU[p.UUID().String()] = p.e
+	srv.pN[p.Name()] = p.e
+	srv.pX[p.XUID()] = p.e
 	srv.mu.Unlock()
 }
 
 // removePlayer removes a Player from the UUID map (internal use during quit).
 func (srv *Server) removePlayer(p *Player) {
 	srv.mu.Lock()
-	delete(srv.p, p.UUID())
+	delete(srv.pU, p.UUID().String())
+	delete(srv.pN, p.Name())
+	delete(srv.pX, p.XUID())
 	srv.mu.Unlock()
 }
 
-// Player looks up a Player by UUID. Returns (nil,false) if not present.
-func (srv *Server) Player(uuid uuid.UUID) (*Player, bool) {
+func (srv *Server) PlayerEntity(uuid uuid.UUID) (ecs.Entity, bool) {
 	srv.mu.RLock()
-	p, ok := srv.p[uuid]
+	p, ok := srv.pU[uuid.String()]
 	srv.mu.RUnlock()
 	return p, ok
 }
 
-// PlayerByName scans registered players for a matching case-sensitive Name().
-func (srv *Server) PlayerByName(name string) (*Player, bool) {
+func (srv *Server) PlayerEntityByName(name string) (ecs.Entity, bool) {
 	srv.mu.RLock()
-	for _, p := range srv.p {
-		if p.Name() == name {
-			srv.mu.RUnlock()
-			return p, true
-		}
-	}
+	p, ok := srv.pN[name]
 	srv.mu.RUnlock()
-	return nil, false
+	return p, ok
 }
 
-// PlayerByXUID scans registered players for a matching XUID.
-func (srv *Server) PlayerByXUID(xuid string) (*Player, bool) {
+func (srv *Server) PlayerEntityByXUID(xuid string) (ecs.Entity, bool) {
 	srv.mu.RLock()
-	for _, p := range srv.p {
-		if p.XUID() == xuid {
-			srv.mu.RUnlock()
-			return p, true
-		}
-	}
+	p, ok := srv.pX[xuid]
 	srv.mu.RUnlock()
-	return nil, false
+	return p, ok
+}
+
+func (srv *Server) Player(e ecs.Entity) (*Player, bool) {
+	if !srv.world.Alive(e) {
+		return nil, false
+	}
+	p := srv.mapper.Get(e)
+	return p, (p != nil)
+}
+
+func (srv *Server) PlayerByName(name string) (*Player, bool) {
+	e, ok := srv.PlayerEntityByName(name)
+	if !ok {
+		return nil, false
+	}
+	if !srv.world.Alive(e) {
+		return nil, false
+	}
+	p := srv.mapper.Get(e)
+	return p, (p != nil)
+}
+
+func (srv *Server) PlayerByUUID(uuid uuid.UUID) (*Player, bool) {
+	e, ok := srv.PlayerEntity(uuid)
+	if !ok {
+		return nil, false
+	}
+	if !srv.world.Alive(e) {
+		return nil, false
+	}
+	p := srv.mapper.Get(e)
+	return p, (p != nil)
+}
+
+func (srv *Server) PlayerByXUID(xuid string) (*Player, bool) {
+	e, ok := srv.PlayerEntityByXUID(xuid)
+	if !ok {
+		return nil, false
+	}
+	if !srv.world.Alive(e) {
+		return nil, false
+	}
+	p := srv.mapper.Get(e)
+	return p, (p != nil)
 }

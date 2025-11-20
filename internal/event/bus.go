@@ -5,14 +5,31 @@ import (
 	"sync"
 )
 
+// Diagnostics is the interface for event system diagnostics.
+type Diagnostics interface {
+	EventEmit(name string, count int)
+}
+
 // Bus is a high-performance, per-type event system with frame-based delivery.
 type Bus struct {
 	stores sync.Map // key: reflect.Type, value: *store[T]
+	diag   Diagnostics
 }
 
 // NewBus constructs a Bus.
 func NewBus() *Bus {
 	return &Bus{}
+}
+
+// SetDiagnostics sets the diagnostics implementation.
+func (b *Bus) SetDiagnostics(d Diagnostics) {
+	b.diag = d
+	b.stores.Range(func(_, v any) bool {
+		if dgn, ok := v.(diagnoser); ok {
+			dgn.setDiagnostics(d)
+		}
+		return true
+	})
 }
 
 // Advance flips write->read buffers for all event types.
@@ -50,6 +67,11 @@ func ReaderFor[T any](b *Bus) Reader[T] {
 // frame advancement and completion handling.
 type advancer interface{ advance() }
 type completer interface{ completeNoReader() }
+type diagnoser interface{ setDiagnostics(Diagnostics) }
+
+func (s *store[T]) setDiagnostics(d Diagnostics) {
+	s.diag = d
+}
 
 // ensureStore fetches or creates the per-type store for T.
 func ensureStore[T any](b *Bus) *store[T] {
@@ -58,7 +80,10 @@ func ensureStore[T any](b *Bus) *store[T] {
 	if v, ok := b.stores.Load(t); ok {
 		return v.(*store[T])
 	}
-	st := &store[T]{}
+	st := &store[T]{
+		name: t.String(),
+		diag: b.diag,
+	}
 	actual, _ := b.stores.LoadOrStore(t, st)
 	return actual.(*store[T])
 }

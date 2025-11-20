@@ -1,5 +1,7 @@
 package scheduler
 
+import "math/bits"
+
 // BitSet is a compact set of non-negative integers implemented as a slice of
 // 64-bit words. It supports fast set algebra and membership checks with low
 // memory overhead. All operations are safe for negative indexes (they are
@@ -276,7 +278,7 @@ func (b *BitSet) IsEmpty() bool {
 func (b *BitSet) Count() int {
 	count := 0
 	for _, w := range b.words {
-		count += popcount64(w)
+		count += bits.OnesCount64(w)
 	}
 	return count
 }
@@ -361,14 +363,4 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// popcount64 counts the number of set bits in x using Kernighan's method.
-func popcount64(x uint64) int {
-	n := 0
-	for x != 0 {
-		x &= x - 1
-		n++
-	}
-	return n
 }

@@ -10,6 +10,7 @@ import (
 type Diagnostics interface {
 	SystemStart(name string, stage Stage)
 	SystemEnd(name string, stage Stage, err error, duration time.Duration)
+	EventEmit(name string, count int)
 }
 
 // NopDiagnostics is a no-op diagnostics implementation.
@@ -17,6 +18,7 @@ type NopDiagnostics struct{}
 
 func (NopDiagnostics) SystemStart(string, Stage)                     {}
 func (NopDiagnostics) SystemEnd(string, Stage, error, time.Duration) {}
+func (NopDiagnostics) EventEmit(string, int)                         {}
 
 // LogDiagnostics logs diagnostics to a logger interface.
 type LogDiagnostics struct {
@@ -40,19 +42,29 @@ func (d *LogDiagnostics) SystemEnd(name string, stage Stage, err error, duration
 	}
 }
 
+func (d *LogDiagnostics) EventEmit(name string, count int) {
+	d.log.Printf("Event %s emitted: %d", name, count)
+}
+
 // internalDiagnostics adapts bevi.Diagnostics to scheduler.Diagnostics
 type internalDiagnostics struct {
 	d Diagnostics
 }
 
-func (da internalDiagnostics) SystemStart(name string, stage scheduler.Stage) {
+func (da *internalDiagnostics) SystemStart(name string, stage scheduler.Stage) {
 	if da.d != nil {
 		da.d.SystemStart(name, Stage(stage))
 	}
 }
 
-func (da internalDiagnostics) SystemEnd(name string, stage scheduler.Stage, err error, duration time.Duration) {
+func (da *internalDiagnostics) SystemEnd(name string, stage scheduler.Stage, err error, duration time.Duration) {
 	if da.d != nil {
 		da.d.SystemEnd(name, Stage(stage), err, duration)
+	}
+}
+
+func (da *internalDiagnostics) EventEmit(name string, count int) {
+	if da.d != nil {
+		da.d.EventEmit(name, count)
 	}
 }

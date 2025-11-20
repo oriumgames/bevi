@@ -81,7 +81,7 @@ func TestStageSeparationAndOrder(t *testing.T) {
 	world := struct{}{}
 
 	// Running Update should run only A, B, C in the expected order.
-	s.RunStage(ctx, Update, &world, nil)
+	s.RunStage(ctx, Update, &world)
 
 	want := []string{"A", "B", "C"}
 	if len(order) != len(want) {
@@ -95,7 +95,7 @@ func TestStageSeparationAndOrder(t *testing.T) {
 
 	// Running Startup should run only the startup system.
 	order = order[:0]
-	s.RunStage(ctx, Startup, &world, nil)
+	s.RunStage(ctx, Startup, &world)
 	if len(order) != 1 || order[0] != "S-Startup" {
 		t.Fatalf("expected only startup system to run, got: %v", order)
 	}
@@ -143,7 +143,7 @@ func TestAccessConflictsExecution(t *testing.T) {
 
 	ctx := context.Background()
 	world := struct{}{}
-	s.RunStage(ctx, Update, &world, nil)
+	s.RunStage(ctx, Update, &world)
 
 	if atomic.LoadInt32(&c1) != 1 || atomic.LoadInt32(&c2) != 1 {
 		t.Fatalf("expected both conflicting systems to run once, got c1=%d c2=%d", c1, c2)
@@ -181,7 +181,7 @@ func TestEveryUnderLoad(t *testing.T) {
 	start := time.Now()
 	// Run for ~220ms, sleeping 10ms between frames to simulate frames.
 	for range 22 {
-		s.RunStage(ctx, Update, &world, nil)
+		s.RunStage(ctx, Update, &world)
 		time.Sleep(10 * time.Millisecond)
 	}
 	elapsed := time.Since(start)
@@ -255,7 +255,7 @@ func TestComplexOrderConstraints(t *testing.T) {
 
 	ctx := context.Background()
 	world := struct{}{}
-	s.RunStage(ctx, Update, &world, nil)
+	s.RunStage(ctx, Update, &world)
 
 	want := []string{"Init", "Load", "Process", "Finalize"}
 	if len(order) != len(want) {
@@ -310,7 +310,7 @@ func TestZeroEveryAndLoad(t *testing.T) {
 	// Run several frames quickly.
 	const frames = 10
 	for range frames {
-		s.RunStage(ctx, Update, &world, nil)
+		s.RunStage(ctx, Update, &world)
 	}
 
 	if got := atomic.LoadInt32(&baseline); got != frames {

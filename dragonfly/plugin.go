@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/df-mc/dragonfly/server"
+	"github.com/go-gl/mathgl/mgl64"
 	"github.com/oriumgames/ark/ecs"
 	"github.com/oriumgames/bevi"
 )
@@ -30,7 +31,7 @@ func (p *Plugin) Build(app *bevi.App) {
 				return bevi.NewAccess()
 			}(),
 		}, func(ctx context.Context, w *ecs.World) {
-			srv := newServer(p.cfg.New())
+			srv := newServer(p.cfg.New(), w, ecs.NewMap1[Player](w))
 			srv.CloseOnProgramEnd()
 			srv.Listen()
 
@@ -39,6 +40,7 @@ func (p *Plugin) Build(app *bevi.App) {
 				for p := range srv.Accept() {
 					p.Handle(h)
 					h.HandleJoin(p)
+					p.Teleport(mgl64.Vec3{0, 14, 0})
 				}
 			}()
 
@@ -61,11 +63,6 @@ func emitPlayerJoin(
 	out bevi.EventWriter[PlayerJoin],
 ) {
 	r.ForEach(func(ev playerCreate) bool {
-		id := ev.p.UUID()
-		if _, ok := srv.Get().Player(id); ok {
-			return true
-		}
-
 		e := w.NewEntity()
 		ip := &Player{
 			Player: ev.p,
@@ -76,21 +73,38 @@ func emitPlayerJoin(
 		srv.Get().addPlayer(ip)
 
 		out.Emit(PlayerJoin{
-			Player: ip,
+			Entity: e,
 		})
 		return true
 	})
 }
 
-//bevi:system PostUpdate Set="dragonfly"
-func finalizePlayerQuit(
-	w *ecs.World,
-	srv ecs.Resource[Server],
-	r bevi.EventReader[PlayerQuit],
+// publishPlayerQuit translates the internal playerRemove event into the public PlayerQuit event.
+//
+//bevi:system PreUpdate Set="dragonfly"
+func publishPlayerQuit(
+	r bevi.EventReader[playerRemove],
+	out bevi.EventWriter[PlayerQuit],
 ) {
-	r.ForEach(func(ev PlayerQuit) bool {
-		srv.Get().removePlayer(ev.Player)
-		w.RemoveEntity(ev.Player.e)
+	r.ForEach(func(ev playerRemove) bool {
+		out.Emit(PlayerQuit{
+			Entity: ev.id,
+			wg:     ev.wg,
+		})
+		return true
+	})
+}
+
+// handlePlayerRemoval performs the cleanup for a quitting player.
+//
+//bevi:system PostUpdate Set="dragonfly"
+func handlePlayerRemoval(
+	w *ecs.World,
+	r bevi.EventReader[playerRemove],
+) {
+	r.ForEach(func(ev playerRemove) bool {
+		w.RemoveEntity(ev.id)
+		ev.wg.Done()
 		return true
 	})
 }

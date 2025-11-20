@@ -3,6 +3,7 @@ package dragonfly
 import (
 	"context"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -19,10 +20,9 @@ import (
 
 // playerHandler bridges Dragonfly player events to the ECS.
 type playerHandler struct {
-	ctx    context.Context
-	srv    *Server
-	world  *ecs.World
-	mapper *ecs.Map1[Player]
+	ctx   context.Context
+	srv   *Server
+	world *ecs.World
 
 	move             bevi.EventWriter[PlayerMove]
 	jump             bevi.EventWriter[PlayerJump]
@@ -61,17 +61,18 @@ type playerHandler struct {
 	join             bevi.EventWriter[PlayerJoin]
 	quit             bevi.EventWriter[PlayerQuit]
 	diagnostics      bevi.EventWriter[PlayerDiagnostics]
+	preQuit          bevi.EventWriter[PlayerPreQuit]
 
 	// internal
 	create bevi.EventWriter[playerCreate]
+	remove bevi.EventWriter[playerRemove]
 }
 
 func newPlayerHandler(ctx context.Context, app *bevi.App, srv *Server) *playerHandler {
 	return &playerHandler{
-		ctx:    ctx,
-		srv:    srv,
-		world:  app.World(),
-		mapper: ecs.NewMap1[Player](app.World()),
+		ctx:   ctx,
+		srv:   srv,
+		world: app.World(),
 
 		move:             bevi.WriterFor[PlayerMove](app.Events()),
 		jump:             bevi.WriterFor[PlayerJump](app.Events()),
@@ -110,19 +111,21 @@ func newPlayerHandler(ctx context.Context, app *bevi.App, srv *Server) *playerHa
 		join:             bevi.WriterFor[PlayerJoin](app.Events()),
 		quit:             bevi.WriterFor[PlayerQuit](app.Events()),
 		diagnostics:      bevi.WriterFor[PlayerDiagnostics](app.Events()),
+		preQuit:          bevi.WriterFor[PlayerPreQuit](app.Events()),
 
 		// internal
 		create: bevi.WriterFor[playerCreate](app.Events()),
+		remove: bevi.WriterFor[playerRemove](app.Events()),
 	}
 }
 
 func (h *playerHandler) HandleMove(ctx *player.Context, newPos mgl64.Vec3, newRot cube.Rotation) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.move.EmitResult(PlayerMove{
-		Player: ip,
+		Entity: id,
 		NewPos: newPos,
 		NewRot: newRot,
 	}).WaitCancelled(h.ctx) {
@@ -131,47 +134,47 @@ func (h *playerHandler) HandleMove(ctx *player.Context, newPos mgl64.Vec3, newRo
 }
 
 func (h *playerHandler) HandleJump(p *player.Player) {
-	ip, ok := h.srv.Player(p.UUID())
+	id, ok := h.srv.PlayerEntity(p.UUID())
 	if !ok {
 		return
 	}
 	h.jump.Emit(PlayerJump{
-		Player: ip,
+		Entity: id,
 	})
 }
 
 func (h *playerHandler) HandleTeleport(ctx *player.Context, pos mgl64.Vec3) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.teleport.EmitResult(PlayerTeleport{
-		Player: ip,
+		Entity: id,
 		Pos:    pos,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
-func (h *playerHandler) HandleChangeWorld(p *player.Player, before, after *world.World) {
-	ip, ok := h.srv.Player(p.UUID())
+func (h *playerHandler) HandleChangeWorld(p *player.Player, before *world.World, after *world.World) {
+	id, ok := h.srv.PlayerEntity(p.UUID())
 	if !ok {
 		return
 	}
 	h.changeWorld.Emit(PlayerChangeWorld{
-		Player: ip,
+		Entity: id,
 		Before: before,
 		After:  after,
 	})
 }
 
 func (h *playerHandler) HandleToggleSprint(ctx *player.Context, after bool) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.toggleSprint.EmitResult(PlayerToggleSprint{
-		Player: ip,
+		Entity: id,
 		After:  after,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
@@ -179,12 +182,12 @@ func (h *playerHandler) HandleToggleSprint(ctx *player.Context, after bool) {
 }
 
 func (h *playerHandler) HandleToggleSneak(ctx *player.Context, after bool) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.toggleSneak.EmitResult(PlayerToggleSneak{
-		Player: ip,
+		Entity: id,
 		After:  after,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
@@ -192,12 +195,12 @@ func (h *playerHandler) HandleToggleSneak(ctx *player.Context, after bool) {
 }
 
 func (h *playerHandler) HandleChat(ctx *player.Context, message *string) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.chat.EmitResult(PlayerChat{
-		Player:  ip,
+		Entity:  id,
 		Message: message,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
@@ -205,12 +208,12 @@ func (h *playerHandler) HandleChat(ctx *player.Context, message *string) {
 }
 
 func (h *playerHandler) HandleFoodLoss(ctx *player.Context, from int, to *int) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.foodLoss.EmitResult(PlayerFoodLoss{
-		Player: ip,
+		Entity: id,
 		From:   from,
 		To:     to,
 	}).WaitCancelled(h.ctx) {
@@ -219,12 +222,12 @@ func (h *playerHandler) HandleFoodLoss(ctx *player.Context, from int, to *int) {
 }
 
 func (h *playerHandler) HandleHeal(ctx *player.Context, health *float64, src world.HealingSource) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.heal.EmitResult(PlayerHeal{
-		Player: ip,
+		Entity: id,
 		Health: health,
 		Src:    src,
 	}).WaitCancelled(h.ctx) {
@@ -233,12 +236,12 @@ func (h *playerHandler) HandleHeal(ctx *player.Context, health *float64, src wor
 }
 
 func (h *playerHandler) HandleHurt(ctx *player.Context, damage *float64, immune bool, attackImmunity *time.Duration, src world.DamageSource) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.hurt.EmitResult(PlayerHurt{
-		Player:         ip,
+		Entity:         id,
 		Damage:         damage,
 		Immune:         immune,
 		AttackImmunity: attackImmunity,
@@ -249,36 +252,36 @@ func (h *playerHandler) HandleHurt(ctx *player.Context, damage *float64, immune 
 }
 
 func (h *playerHandler) HandleDeath(p *player.Player, src world.DamageSource, keepInv *bool) {
-	ip, ok := h.srv.Player(p.UUID())
+	id, ok := h.srv.PlayerEntity(p.UUID())
 	if !ok {
 		return
 	}
 	h.death.Emit(PlayerDeath{
-		Player:  ip,
+		Entity:  id,
 		Src:     src,
 		KeepInv: keepInv,
 	})
 }
 
 func (h *playerHandler) HandleRespawn(p *player.Player, pos *mgl64.Vec3, w **world.World) {
-	ip, ok := h.srv.Player(p.UUID())
+	id, ok := h.srv.PlayerEntity(p.UUID())
 	if !ok {
 		return
 	}
 	h.respawn.Emit(PlayerRespawn{
-		Player: ip,
+		Entity: id,
 		Pos:    pos,
 		W:      w,
 	})
 }
 
 func (h *playerHandler) HandleSkinChange(ctx *player.Context, skin *skin.Skin) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.skinChange.EmitResult(PlayerSkinChange{
-		Player: ip,
+		Entity: id,
 		Skin:   skin,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
@@ -286,12 +289,12 @@ func (h *playerHandler) HandleSkinChange(ctx *player.Context, skin *skin.Skin) {
 }
 
 func (h *playerHandler) HandleFireExtinguish(ctx *player.Context, pos cube.Pos) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.fireExtinguish.EmitResult(PlayerFireExtinguish{
-		Player: ip,
+		Entity: id,
 		Pos:    pos,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
@@ -299,12 +302,12 @@ func (h *playerHandler) HandleFireExtinguish(ctx *player.Context, pos cube.Pos) 
 }
 
 func (h *playerHandler) HandleStartBreak(ctx *player.Context, pos cube.Pos) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.startBreak.EmitResult(PlayerStartBreak{
-		Player: ip,
+		Entity: id,
 		Pos:    pos,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
@@ -312,67 +315,67 @@ func (h *playerHandler) HandleStartBreak(ctx *player.Context, pos cube.Pos) {
 }
 
 func (h *playerHandler) HandleBlockBreak(ctx *player.Context, pos cube.Pos, drops *[]item.Stack, xp *int) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.blockBreak.EmitResult(PlayerBlockBreak{
-		Player: ip,
+		Entity: id,
 		Pos:    pos,
 		Drops:  drops,
-		XP:     xp,
+		Xp:     xp,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
-func (h *playerHandler) HandleBlockPlace(ctx *player.Context, pos cube.Pos, b world.Block) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+func (h *playerHandler) HandleBlockPlace(ctx *player.Context, pos cube.Pos, block world.Block) {
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.blockPlace.EmitResult(PlayerBlockPlace{
-		Player: ip,
+		Entity: id,
 		Pos:    pos,
-		Block:  b,
+		Block:  block,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
-func (h *playerHandler) HandleBlockPick(ctx *player.Context, pos cube.Pos, b world.Block) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+func (h *playerHandler) HandleBlockPick(ctx *player.Context, pos cube.Pos, block world.Block) {
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.blockPick.EmitResult(PlayerBlockPick{
-		Player: ip,
+		Entity: id,
 		Pos:    pos,
-		Block:  b,
+		Block:  block,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
 func (h *playerHandler) HandleItemUse(ctx *player.Context) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.itemUse.EmitResult(PlayerItemUse{
-		Player: ip,
+		Entity: id,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
 func (h *playerHandler) HandleItemUseOnBlock(ctx *player.Context, pos cube.Pos, face cube.Face, clickPos mgl64.Vec3) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.itemUseOnBlock.EmitResult(PlayerItemUseOnBlock{
-		Player:   ip,
+		Entity:   id,
 		Pos:      pos,
 		Face:     face,
 		ClickPos: clickPos,
@@ -381,26 +384,26 @@ func (h *playerHandler) HandleItemUseOnBlock(ctx *player.Context, pos cube.Pos, 
 	}
 }
 
-func (h *playerHandler) HandleItemUseOnEntity(ctx *player.Context, e world.Entity) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+func (h *playerHandler) HandleItemUseOnEntity(ctx *player.Context, target world.Entity) {
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.itemUseOnEntity.EmitResult(PlayerItemUseOnEntity{
-		Player: ip,
-		Target: e,
+		Entity: id,
+		Target: target,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
 func (h *playerHandler) HandleItemRelease(ctx *player.Context, item item.Stack, dur time.Duration) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.itemRelease.EmitResult(PlayerItemRelease{
-		Player: ip,
+		Entity: id,
 		Item:   item,
 		Dur:    dur,
 	}).WaitCancelled(h.ctx) {
@@ -409,26 +412,26 @@ func (h *playerHandler) HandleItemRelease(ctx *player.Context, item item.Stack, 
 }
 
 func (h *playerHandler) HandleItemConsume(ctx *player.Context, item item.Stack) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.itemConsume.EmitResult(PlayerItemConsume{
-		Player: ip,
+		Entity: id,
 		Item:   item,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
-func (h *playerHandler) HandleAttackEntity(ctx *player.Context, e world.Entity, force, height *float64, critical *bool) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+func (h *playerHandler) HandleAttackEntity(ctx *player.Context, target world.Entity, force *float64, height *float64, critical *bool) {
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.attackEntity.EmitResult(PlayerAttackEntity{
-		Player:   ip,
-		Target:   e,
+		Entity:   id,
+		Target:   target,
 		Force:    force,
 		Height:   height,
 		Critical: critical,
@@ -438,12 +441,12 @@ func (h *playerHandler) HandleAttackEntity(ctx *player.Context, e world.Entity, 
 }
 
 func (h *playerHandler) HandleExperienceGain(ctx *player.Context, amount *int) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.experienceGain.EmitResult(PlayerExperienceGain{
-		Player: ip,
+		Entity: id,
 		Amount: amount,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
@@ -451,26 +454,26 @@ func (h *playerHandler) HandleExperienceGain(ctx *player.Context, amount *int) {
 }
 
 func (h *playerHandler) HandlePunchAir(ctx *player.Context) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.punchAir.EmitResult(PlayerPunchAir{
-		Player: ip,
+		Entity: id,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
-func (h *playerHandler) HandleSignEdit(ctx *player.Context, pos cube.Pos, front bool, oldText, newText string) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+func (h *playerHandler) HandleSignEdit(ctx *player.Context, pos cube.Pos, frontSide bool, oldText string, newText string) {
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.signEdit.EmitResult(PlayerSignEdit{
-		Player:    ip,
+		Entity:    id,
 		Pos:       pos,
-		FrontSide: front,
+		FrontSide: frontSide,
 		OldText:   oldText,
 		NewText:   newText,
 	}).WaitCancelled(h.ctx) {
@@ -479,12 +482,12 @@ func (h *playerHandler) HandleSignEdit(ctx *player.Context, pos cube.Pos, front 
 }
 
 func (h *playerHandler) HandleLecternPageTurn(ctx *player.Context, pos cube.Pos, oldPage int, newPage *int) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.lecternPageTurn.EmitResult(PlayerLecternPageTurn{
-		Player:  ip,
+		Entity:  id,
 		Pos:     pos,
 		OldPage: oldPage,
 		NewPage: newPage,
@@ -493,40 +496,40 @@ func (h *playerHandler) HandleLecternPageTurn(ctx *player.Context, pos cube.Pos,
 	}
 }
 
-func (h *playerHandler) HandleItemDamage(ctx *player.Context, i item.Stack, damage int) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+func (h *playerHandler) HandleItemDamage(ctx *player.Context, item item.Stack, damage int) {
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.itemDamage.EmitResult(PlayerItemDamage{
-		Player: ip,
-		Item:   i,
+		Entity: id,
+		Item:   item,
 		Damage: damage,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
-func (h *playerHandler) HandleItemPickup(ctx *player.Context, i *item.Stack) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+func (h *playerHandler) HandleItemPickup(ctx *player.Context, item *item.Stack) {
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.itemPickup.EmitResult(PlayerItemPickup{
-		Player: ip,
-		Item:   i,
+		Entity: id,
+		Item:   item,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
-func (h *playerHandler) HandleHeldSlotChange(ctx *player.Context, from, to int) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+func (h *playerHandler) HandleHeldSlotChange(ctx *player.Context, from int, to int) {
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.heldSlotChange.EmitResult(PlayerHeldSlotChange{
-		Player: ip,
+		Entity: id,
 		From:   from,
 		To:     to,
 	}).WaitCancelled(h.ctx) {
@@ -534,26 +537,26 @@ func (h *playerHandler) HandleHeldSlotChange(ctx *player.Context, from, to int) 
 	}
 }
 
-func (h *playerHandler) HandleItemDrop(ctx *player.Context, it item.Stack) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+func (h *playerHandler) HandleItemDrop(ctx *player.Context, item item.Stack) {
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.itemDrop.EmitResult(PlayerItemDrop{
-		Player: ip,
-		Item:   it,
+		Entity: id,
+		Item:   item,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
 func (h *playerHandler) HandleTransfer(ctx *player.Context, addr *net.UDPAddr) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.transfer.EmitResult(PlayerTransfer{
-		Player: ip,
+		Entity: id,
 		Addr:   addr,
 	}).WaitCancelled(h.ctx) {
 		ctx.Cancel()
@@ -561,12 +564,12 @@ func (h *playerHandler) HandleTransfer(ctx *player.Context, addr *net.UDPAddr) {
 }
 
 func (h *playerHandler) HandleCommandExecution(ctx *player.Context, command cmd.Command, args []string) {
-	ip, ok := h.srv.Player(ctx.Val().UUID())
+	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
 	if !ok {
 		return
 	}
 	if h.commandExecution.EmitResult(PlayerCommandExecution{
-		Player:  ip,
+		Entity:  id,
 		Command: command,
 		Args:    args,
 	}).WaitCancelled(h.ctx) {
@@ -581,22 +584,33 @@ func (h *playerHandler) HandleJoin(p *player.Player) {
 }
 
 func (h *playerHandler) HandleQuit(p *player.Player) {
-	ip, ok := h.srv.Player(p.UUID())
+	id, ok := h.srv.PlayerEntity(p.UUID())
 	if !ok {
 		return
 	}
-	h.quit.EmitResult(PlayerQuit{
-		Player: ip,
-	}).Wait(context.Background())
+
+	h.preQuit.Emit(PlayerPreQuit{
+		Entity: id,
+	})
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	h.remove.Emit(playerRemove{
+		id: id,
+		wg: &wg,
+	})
+
+	wg.Wait()
 }
 
-func (h *playerHandler) HandleDiagnostics(p *player.Player, d session.Diagnostics) {
-	ip, ok := h.srv.Player(p.UUID())
+func (h *playerHandler) HandleDiagnostics(p *player.Player, diagnostics session.Diagnostics) {
+	id, ok := h.srv.PlayerEntity(p.UUID())
 	if !ok {
 		return
 	}
 	h.diagnostics.Emit(PlayerDiagnostics{
-		Player:      ip,
-		Diagnostics: d,
+		Entity:      id,
+		Diagnostics: diagnostics,
 	})
 }

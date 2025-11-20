@@ -27,7 +27,7 @@ Clone this repository and run the example server:
 
 ```bash
 # From the repository root
-cd example/server
+cd dragonfly/example/server
 
 # Generate Bevi glue (systems registration, queries, access metadata)
 go generate ./...
@@ -81,9 +81,12 @@ func main() {
 }
 
 //bevi:system Update
-func HelloOnJoin(r bevi.EventReader[dragonfly.PlayerJoin]) {
-	r.ForEach(func(ev dragonfly.PlayerJoin) bool {
-		ev.Player.Message("Welcome to the server!")
+func HelloOnJoin(
+	srv ecs.Resource[dragonfly.Server],
+	r bevi.EventReader[dragonfly.PlayerJoin],
+) {
+	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerJoin, p *dragonfly.Player) bool {
+		p.Message("Welcome to the server!")
 		return true
 	})
 }
@@ -156,7 +159,8 @@ Resource:
 - The plugin registers an ECS resource of type `dragonfly.Server` that wraps Dragonfly’s `*server.Server` and tracks players
 
 Convenience methods:
-- `Player(uuid.UUID) (*dragonfly.Player, bool)`
+- `Player(ecs.Entity) (*dragonfly.Player, bool)`
+- `PlayerByUUID(uuid.UUID) (*dragonfly.Player, bool)`
 - `PlayerByName(string) (*dragonfly.Player, bool)`
 - `PlayerByXUID(string) (*dragonfly.Player, bool)`
 

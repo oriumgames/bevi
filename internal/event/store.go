@@ -110,10 +110,15 @@ type store[T any] struct {
 	readEnt   []*entry[T]
 	writeEnt  []*entry[T]
 	entryPool sync.Pool // pools *entry[T] to reduce allocations
+	name      string
+	diag      Diagnostics
 }
 
 // appendEntry appends an event to the current write buffer and returns its entry.
 func (s *store[T]) appendEntry(v T) *entry[T] {
+	if s.diag != nil {
+		s.diag.EventEmit(s.name, 1)
+	}
 	ent := s.newEntry(v, false)
 
 	s.mu.Lock()
@@ -124,19 +129,19 @@ func (s *store[T]) appendEntry(v T) *entry[T] {
 }
 
 // appendMany appends multiple events without returning result handles.
-// Minor perf tweak: pre-size the entry slice and fill, minimizing allocations.
 func (s *store[T]) appendMany(vals []T) {
 	if len(vals) == 0 {
 		return
 	}
 
-	s.mu.Lock()
-	n := len(vals)
-	ents := make([]*entry[T], n)
-	for i := range n {
-		ents[i] = s.newEntry(vals[i], false)
+	if s.diag != nil {
+		s.diag.EventEmit(s.name, len(vals))
 	}
-	s.writeEnt = append(s.writeEnt, ents...)
+
+	s.mu.Lock()
+	for _, v := range vals {
+		s.writeEnt = append(s.writeEnt, s.newEntry(v, false))
+	}
 	s.mu.Unlock()
 }
 

@@ -49,7 +49,7 @@ func newWorldHandler(ctx context.Context, app *bevi.App) *worldHandler {
 	}
 }
 
-func (h *worldHandler) HandleLiquidFlow(ctx *world.Context, from, into cube.Pos, liquid world.Liquid, replaced world.Block) {
+func (h *worldHandler) HandleLiquidFlow(ctx *world.Context, from cube.Pos, into cube.Pos, liquid world.Liquid, replaced world.Block) {
 	if h.liquidFlow.EmitResult(WorldLiquidFlow{
 		From:     from,
 		Into:     into,
@@ -60,7 +60,7 @@ func (h *worldHandler) HandleLiquidFlow(ctx *world.Context, from, into cube.Pos,
 	}
 }
 
-func (h *worldHandler) HandleLiquidDecay(ctx *world.Context, pos cube.Pos, before, after world.Liquid) {
+func (h *worldHandler) HandleLiquidDecay(ctx *world.Context, pos cube.Pos, before world.Liquid, after world.Liquid) {
 	if h.liquidDecay.EmitResult(WorldLiquidDecay{
 		Pos:    pos,
 		Before: before,
@@ -70,7 +70,7 @@ func (h *worldHandler) HandleLiquidDecay(ctx *world.Context, pos cube.Pos, befor
 	}
 }
 
-func (h *worldHandler) HandleLiquidHarden(ctx *world.Context, hardenedPos cube.Pos, liquidHardened, otherLiquid, newBlock world.Block) {
+func (h *worldHandler) HandleLiquidHarden(ctx *world.Context, hardenedPos cube.Pos, liquidHardened world.Block, otherLiquid world.Block, newBlock world.Block) {
 	if h.liquidHarden.EmitResult(WorldLiquidHarden{
 		HardenedPos:    hardenedPos,
 		LiquidHardened: liquidHardened,
@@ -90,7 +90,7 @@ func (h *worldHandler) HandleSound(ctx *world.Context, s world.Sound, pos mgl64.
 	}
 }
 
-func (h *worldHandler) HandleFireSpread(ctx *world.Context, from, to cube.Pos) {
+func (h *worldHandler) HandleFireSpread(ctx *world.Context, from cube.Pos, to cube.Pos) {
 	if h.fireSpread.EmitResult(WorldFireSpread{
 		From: from,
 		To:   to,
@@ -123,17 +123,17 @@ func (h *worldHandler) HandleLeavesDecay(ctx *world.Context, pos cube.Pos) {
 	}
 }
 
-func (h *worldHandler) HandleEntitySpawn(tx *world.Tx, e world.Entity) {
+func (h *worldHandler) HandleEntitySpawn(tx *world.Tx, entity world.Entity) {
 	h.entitySpawn.Emit(WorldEntitySpawn{
 		Tx:     tx,
-		Entity: e,
+		Entity: entity,
 	})
 }
 
-func (h *worldHandler) HandleEntityDespawn(tx *world.Tx, e world.Entity) {
+func (h *worldHandler) HandleEntityDespawn(tx *world.Tx, entity world.Entity) {
 	h.entityDespawn.Emit(WorldEntityDespawn{
 		Tx:     tx,
-		Entity: e,
+		Entity: entity,
 	})
 }
 

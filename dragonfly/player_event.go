@@ -2,6 +2,7 @@ package dragonfly
 
 import (
 	"net"
+	"sync"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -12,258 +13,348 @@ import (
 	"github.com/df-mc/dragonfly/server/session"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
+	"github.com/oriumgames/ark/ecs"
 )
 
 // Player events.
-// These map 1:1 to github.com/df-mc/dragonfly/server/player.Handler methods,
-// excluding the ctx parameter. The remaining fields match the handler argument
-// types exactly and include a ecs.Entity identifying the ECS player entity. // todo
+// These map 1:1 to github.com/df-mc/dragonfly/server/player.Handler methods.
 
-// PlayerMove is a cancellable event and corresponds to HandleMove(ctx *Context, newPos mgl64.Vec3, newRot cube.Rotation).
+type PlayerEvent interface {
+	Player() ecs.Entity
+}
+
+// PlayerMove is a cancellable event and corresponds to HandleMove(ctx *player.Context, newPos mgl64.Vec3, newRot cube.Rotation).
 type PlayerMove struct {
-	Player *Player
+	Entity ecs.Entity
 	NewPos mgl64.Vec3
 	NewRot cube.Rotation
 }
 
-// PlayerJump corresponds to HandleJump(p *Player).
+func (p PlayerMove) Player() ecs.Entity { return p.Entity }
+
+// PlayerJump corresponds to HandleJump(p *player.Player).
 type PlayerJump struct {
-	Player *Player
+	Entity ecs.Entity
 }
 
-// PlayerTeleport is a cancellable event and corresponds to HandleTeleport(ctx *Context, pos mgl64.Vec3).
+func (p PlayerJump) Player() ecs.Entity { return p.Entity }
+
+// PlayerTeleport is a cancellable event and corresponds to HandleTeleport(ctx *player.Context, pos mgl64.Vec3).
 type PlayerTeleport struct {
-	Player *Player
+	Entity ecs.Entity
 	Pos    mgl64.Vec3
 }
 
-// PlayerChangeWorld corresponds to HandleChangeWorld(p *Player, before, after *world.World).
+func (p PlayerTeleport) Player() ecs.Entity { return p.Entity }
+
+// PlayerChangeWorld corresponds to HandleChangeWorld(p *player.Player, before *world.World, after *world.World).
 type PlayerChangeWorld struct {
-	Player *Player
+	Entity ecs.Entity
 	Before *world.World
 	After  *world.World
 }
 
-// PlayerToggleSprint is a cancellable event and corresponds to HandleToggleSprint(ctx *Context, after bool).
+func (p PlayerChangeWorld) Player() ecs.Entity { return p.Entity }
+
+// PlayerToggleSprint is a cancellable event and corresponds to HandleToggleSprint(ctx *player.Context, after bool).
 type PlayerToggleSprint struct {
-	Player *Player
+	Entity ecs.Entity
 	After  bool
 }
 
-// PlayerToggleSneak is a cancellable event and corresponds to HandleToggleSneak(ctx *Context, after bool).
+func (p PlayerToggleSprint) Player() ecs.Entity { return p.Entity }
+
+// PlayerToggleSneak is a cancellable event and corresponds to HandleToggleSneak(ctx *player.Context, after bool).
 type PlayerToggleSneak struct {
-	Player *Player
+	Entity ecs.Entity
 	After  bool
 }
 
-// PlayerChat is a cancellable event and corresponds to HandleChat(ctx *Context, message *string).
+func (p PlayerToggleSneak) Player() ecs.Entity { return p.Entity }
+
+// PlayerChat is a cancellable event and corresponds to HandleChat(ctx *player.Context, message *string).
 type PlayerChat struct {
-	Player  *Player
+	Entity  ecs.Entity
 	Message *string
 }
 
-// PlayerFoodLoss is a cancellable event and corresponds to HandleFoodLoss(ctx *Context, from int, to *int).
+func (p PlayerChat) Player() ecs.Entity { return p.Entity }
+
+// PlayerFoodLoss is a cancellable event and corresponds to HandleFoodLoss(ctx *player.Context, from int, to *int).
 type PlayerFoodLoss struct {
-	Player *Player
+	Entity ecs.Entity
 	From   int
 	To     *int
 }
 
-// PlayerHeal is a cancellable event and corresponds to HandleHeal(ctx *Context, health *float64, src world.HealingSource).
+func (p PlayerFoodLoss) Player() ecs.Entity { return p.Entity }
+
+// PlayerHeal is a cancellable event and corresponds to HandleHeal(ctx *player.Context, health *float64, src world.HealingSource).
 type PlayerHeal struct {
-	Player *Player
+	Entity ecs.Entity
 	Health *float64
 	Src    world.HealingSource
 }
 
-// PlayerHurt is a cancellable event and corresponds to HandleHurt(ctx *Context, damage *float64, immune bool, attackImmunity *time.Duration, src world.DamageSource).
+func (p PlayerHeal) Player() ecs.Entity { return p.Entity }
+
+// PlayerHurt is a cancellable event and corresponds to HandleHurt(ctx *player.Context, damage *float64, immune bool, attackImmunity *time.Duration, src world.DamageSource).
 type PlayerHurt struct {
-	Player         *Player
+	Entity         ecs.Entity
 	Damage         *float64
 	Immune         bool
 	AttackImmunity *time.Duration
 	Src            world.DamageSource
 }
 
-// PlayerDeath corresponds to HandleDeath(p *Player, src world.DamageSource, keepInv *bool).
+func (p PlayerHurt) Player() ecs.Entity { return p.Entity }
+
+// PlayerDeath corresponds to HandleDeath(p *player.Player, src world.DamageSource, keepInv *bool).
 type PlayerDeath struct {
-	Player  *Player
+	Entity  ecs.Entity
 	Src     world.DamageSource
 	KeepInv *bool
 }
 
-// PlayerRespawn corresponds to HandleRespawn(p *Player, pos *mgl64.Vec3, w **world.World).
+func (p PlayerDeath) Player() ecs.Entity { return p.Entity }
+
+// PlayerRespawn corresponds to HandleRespawn(p *player.Player, pos *mgl64.Vec3, w **world.World).
 type PlayerRespawn struct {
-	Player *Player
+	Entity ecs.Entity
 	Pos    *mgl64.Vec3
 	W      **world.World
 }
 
-// PlayerSkinChange is a cancellable event and corresponds to HandleSkinChange(ctx *Context, skin *skin.Skin).
+func (p PlayerRespawn) Player() ecs.Entity { return p.Entity }
+
+// PlayerSkinChange is a cancellable event and corresponds to HandleSkinChange(ctx *player.Context, skin *skin.Skin).
 type PlayerSkinChange struct {
-	Player *Player
+	Entity ecs.Entity
 	Skin   *skin.Skin
 }
 
-// PlayerFireExtinguish corresponds to HandleFireExtinguish(ctx *Context, pos cube.Pos).
+func (p PlayerSkinChange) Player() ecs.Entity { return p.Entity }
+
+// PlayerFireExtinguish is a cancellable event and corresponds to HandleFireExtinguish(ctx *player.Context, pos cube.Pos).
 type PlayerFireExtinguish struct {
-	Player *Player
+	Entity ecs.Entity
 	Pos    cube.Pos
 }
 
-// PlayerStartBreak is a cancellable event and corresponds to HandleStartBreak(ctx *Context, pos cube.Pos).
+func (p PlayerFireExtinguish) Player() ecs.Entity { return p.Entity }
+
+// PlayerStartBreak is a cancellable event and corresponds to HandleStartBreak(ctx *player.Context, pos cube.Pos).
 type PlayerStartBreak struct {
-	Player *Player
+	Entity ecs.Entity
 	Pos    cube.Pos
 }
 
-// PlayerBlockBreak is a cancellable event and corresponds to HandleBlockBreak(ctx *Context, pos cube.Pos, drops *[]item.Stack, xp *int).
+func (p PlayerStartBreak) Player() ecs.Entity { return p.Entity }
+
+// PlayerBlockBreak is a cancellable event and corresponds to HandleBlockBreak(ctx *player.Context, pos cube.Pos, drops *[]item.Stack, xp *int).
 type PlayerBlockBreak struct {
-	Player *Player
+	Entity ecs.Entity
 	Pos    cube.Pos
 	Drops  *[]item.Stack
-	XP     *int
+	Xp     *int
 }
 
-// PlayerBlockPlace is a cancellable event and corresponds to HandleBlockPlace(ctx *Context, pos cube.Pos, b world.Block).
+func (p PlayerBlockBreak) Player() ecs.Entity { return p.Entity }
+
+// PlayerBlockPlace is a cancellable event and corresponds to HandleBlockPlace(ctx *player.Context, pos cube.Pos, block world.Block).
 type PlayerBlockPlace struct {
-	Player *Player
+	Entity ecs.Entity
 	Pos    cube.Pos
 	Block  world.Block
 }
 
-// PlayerBlockPick is a cancellable event and corresponds to HandleBlockPick(ctx *Context, pos cube.Pos, b world.Block).
+func (p PlayerBlockPlace) Player() ecs.Entity { return p.Entity }
+
+// PlayerBlockPick is a cancellable event and corresponds to HandleBlockPick(ctx *player.Context, pos cube.Pos, block world.Block).
 type PlayerBlockPick struct {
-	Player *Player
+	Entity ecs.Entity
 	Pos    cube.Pos
 	Block  world.Block
 }
 
-// PlayerItemUse is a cancellable event and corresponds to HandleItemUse(ctx *Context).
+func (p PlayerBlockPick) Player() ecs.Entity { return p.Entity }
+
+// PlayerItemUse is a cancellable event and corresponds to HandleItemUse(ctx *player.Context).
 type PlayerItemUse struct {
-	Player *Player
+	Entity ecs.Entity
 }
 
-// PlayerItemUseOnBlock is a cancellable event and corresponds to HandleItemUseOnBlock(ctx *Context, pos cube.Pos, face cube.Face, clickPos mgl64.Vec3).
+func (p PlayerItemUse) Player() ecs.Entity { return p.Entity }
+
+// PlayerItemUseOnBlock is a cancellable event and corresponds to HandleItemUseOnBlock(ctx *player.Context, pos cube.Pos, face cube.Face, clickPos mgl64.Vec3).
 type PlayerItemUseOnBlock struct {
-	Player   *Player
+	Entity   ecs.Entity
 	Pos      cube.Pos
 	Face     cube.Face
 	ClickPos mgl64.Vec3
 }
 
-// PlayerItemUseOnEntity is a cancellable event and corresponds to HandleItemUseOnEntity(ctx *Context, e world.Entity).
+func (p PlayerItemUseOnBlock) Player() ecs.Entity { return p.Entity }
+
+// PlayerItemUseOnEntity is a cancellable event and corresponds to HandleItemUseOnEntity(ctx *player.Context, target world.Entity).
 type PlayerItemUseOnEntity struct {
-	Player *Player
+	Entity ecs.Entity
 	Target world.Entity
 }
 
-// PlayerItemRelease corresponds to HandleItemRelease(ctx *Context, item item.Stack, dur time.Duration).
+func (p PlayerItemUseOnEntity) Player() ecs.Entity { return p.Entity }
+
+// PlayerItemRelease is a cancellable event and corresponds to HandleItemRelease(ctx *player.Context, item item.Stack, dur time.Duration).
 type PlayerItemRelease struct {
-	Player *Player
+	Entity ecs.Entity
 	Item   item.Stack
 	Dur    time.Duration
 }
 
-// PlayerItemConsume is a cancellable event and corresponds to HandleItemConsume(ctx *Context, item item.Stack).
+func (p PlayerItemRelease) Player() ecs.Entity { return p.Entity }
+
+// PlayerItemConsume is a cancellable event and corresponds to HandleItemConsume(ctx *player.Context, item item.Stack).
 type PlayerItemConsume struct {
-	Player *Player
+	Entity ecs.Entity
 	Item   item.Stack
 }
 
-// PlayerAttackEntity is a cancellable event and corresponds to HandleAttackEntity(ctx *Context, e world.Entity, force, height *float64, critical *bool).
+func (p PlayerItemConsume) Player() ecs.Entity { return p.Entity }
+
+// PlayerAttackEntity is a cancellable event and corresponds to HandleAttackEntity(ctx *player.Context, target world.Entity, force *float64, height *float64, critical *bool).
 type PlayerAttackEntity struct {
-	Player   *Player
+	Entity   ecs.Entity
 	Target   world.Entity
 	Force    *float64
 	Height   *float64
 	Critical *bool
 }
 
-// PlayerExperienceGain is a cancellable event and corresponds to HandleExperienceGain(ctx *Context, amount *int).
+func (p PlayerAttackEntity) Player() ecs.Entity { return p.Entity }
+
+// PlayerExperienceGain is a cancellable event and corresponds to HandleExperienceGain(ctx *player.Context, amount *int).
 type PlayerExperienceGain struct {
-	Player *Player
+	Entity ecs.Entity
 	Amount *int
 }
 
-// PlayerPunchAir is a cancellable event and corresponds to HandlePunchAir(ctx *Context).
+func (p PlayerExperienceGain) Player() ecs.Entity { return p.Entity }
+
+// PlayerPunchAir is a cancellable event and corresponds to HandlePunchAir(ctx *player.Context).
 type PlayerPunchAir struct {
-	Player *Player
+	Entity ecs.Entity
 }
 
-// PlayerSignEdit is a cancellable event and corresponds to HandleSignEdit(ctx *Context, pos cube.Pos, frontSide bool, oldText, newText string).
+func (p PlayerPunchAir) Player() ecs.Entity { return p.Entity }
+
+// PlayerSignEdit is a cancellable event and corresponds to HandleSignEdit(ctx *player.Context, pos cube.Pos, frontSide bool, oldText string, newText string).
 type PlayerSignEdit struct {
-	Player    *Player
+	Entity    ecs.Entity
 	Pos       cube.Pos
 	FrontSide bool
 	OldText   string
 	NewText   string
 }
 
-// PlayerLecternPageTurn is a cancellable event and corresponds to HandleLecternPageTurn(ctx *Context, pos cube.Pos, oldPage int, newPage *int).
+func (p PlayerSignEdit) Player() ecs.Entity { return p.Entity }
+
+// PlayerLecternPageTurn is a cancellable event and corresponds to HandleLecternPageTurn(ctx *player.Context, pos cube.Pos, oldPage int, newPage *int).
 type PlayerLecternPageTurn struct {
-	Player  *Player
+	Entity  ecs.Entity
 	Pos     cube.Pos
 	OldPage int
 	NewPage *int
 }
 
-// PlayerItemDamage is a cancellable event and corresponds to HandleItemDamage(ctx *Context, i item.Stack, damage int).
+func (p PlayerLecternPageTurn) Player() ecs.Entity { return p.Entity }
+
+// PlayerItemDamage is a cancellable event and corresponds to HandleItemDamage(ctx *player.Context, item item.Stack, damage int).
 type PlayerItemDamage struct {
-	Player *Player
+	Entity ecs.Entity
 	Item   item.Stack
 	Damage int
 }
 
-// PlayerItemPickup is a cancellable event and corresponds to HandleItemPickup(ctx *Context, i *item.Stack).
+func (p PlayerItemDamage) Player() ecs.Entity { return p.Entity }
+
+// PlayerItemPickup is a cancellable event and corresponds to HandleItemPickup(ctx *player.Context, item *item.Stack).
 type PlayerItemPickup struct {
-	Player *Player
+	Entity ecs.Entity
 	Item   *item.Stack
 }
 
-// PlayerHeldSlotChange corresponds to HandleHeldSlotChange(ctx *Context, from, to int).
+func (p PlayerItemPickup) Player() ecs.Entity { return p.Entity }
+
+// PlayerHeldSlotChange is a cancellable event and corresponds to HandleHeldSlotChange(ctx *player.Context, from int, to int).
 type PlayerHeldSlotChange struct {
-	Player *Player
+	Entity ecs.Entity
 	From   int
 	To     int
 }
 
-// PlayerItemDrop is a cancellable event and corresponds to HandleItemDrop(ctx *Context, s item.Stack).
+func (p PlayerHeldSlotChange) Player() ecs.Entity { return p.Entity }
+
+// PlayerItemDrop is a cancellable event and corresponds to HandleItemDrop(ctx *player.Context, item item.Stack).
 type PlayerItemDrop struct {
-	Player *Player
+	Entity ecs.Entity
 	Item   item.Stack
 }
 
-// PlayerTransfer is a cancellable event and corresponds to HandleTransfer(ctx *Context, addr *net.UDPAddr).
+func (p PlayerItemDrop) Player() ecs.Entity { return p.Entity }
+
+// PlayerTransfer is a cancellable event and corresponds to HandleTransfer(ctx *player.Context, addr *net.UDPAddr).
 type PlayerTransfer struct {
-	Player *Player
+	Entity ecs.Entity
 	Addr   *net.UDPAddr
 }
 
-// PlayerCommandExecution is a cancellable event and corresponds to HandleCommandExecution(ctx *Context, command cmd.Command, args []string).
+func (p PlayerTransfer) Player() ecs.Entity { return p.Entity }
+
+// PlayerCommandExecution is a cancellable event and corresponds to HandleCommandExecution(ctx *player.Context, command cmd.Command, args []string).
 type PlayerCommandExecution struct {
-	Player  *Player
+	Entity  ecs.Entity
 	Command cmd.Command
 	Args    []string
 }
 
-// PlayerJoin corresponds to no handler, emitted upon player accept.
+func (p PlayerCommandExecution) Player() ecs.Entity { return p.Entity }
+
+// PlayerJoin corresponds to HandleJoin(p *player.Player).
 type PlayerJoin struct {
-	Player *Player
+	Entity ecs.Entity
 }
 
-// PlayerQuit corresponds to HandleQuit(p *Player).
+func (p PlayerJoin) Player() ecs.Entity { return p.Entity }
+
+// PlayerQuit corresponds to HandleQuit(p *player.Player).
 type PlayerQuit struct {
-	Player *Player
+	Entity ecs.Entity
+	wg     *sync.WaitGroup
 }
 
-// PlayerDiagnostics corresponds to HandleDiagnostics(p *Player, d session.Diagnostics).
+func (p PlayerQuit) Player() ecs.Entity { return p.Entity }
+
+// PlayerDiagnostics corresponds to HandleDiagnostics(p *player.Player, diagnostics session.Diagnostics).
 type PlayerDiagnostics struct {
-	Player      *Player
+	Entity      ecs.Entity
 	Diagnostics session.Diagnostics
 }
+
+func (p PlayerDiagnostics) Player() ecs.Entity { return p.Entity }
+
+// PreQuit is special
+type PlayerPreQuit struct {
+	Entity ecs.Entity
+}
+
+func (p PlayerPreQuit) Player() ecs.Entity { return p.Entity }
 
 // strictly internal, not for external consumption
 type playerCreate struct {
 	p *player.Player
+}
+
+type playerRemove struct {
+	id ecs.Entity
+	wg *sync.WaitGroup
 }

@@ -28,13 +28,19 @@ type App struct {
 func NewApp() *App {
 	w := ecs.NewWorld()
 	bus := event.NewBus()
+	sched := scheduler.NewScheduler()
+	diag := &internalDiagnostics{
+		d: &NopDiagnostics{},
+	}
+
+	bus.SetDiagnostics(diag)
+	sched.SetDiagnostics(diag)
+
 	return &App{
 		world:  &w,
-		sched:  scheduler.NewScheduler(),
+		sched:  sched,
 		events: bus,
-		diag: &internalDiagnostics{
-			d: &NopDiagnostics{},
-		},
+		diag:   diag,
 	}
 }
 
@@ -96,6 +102,8 @@ func (a *App) Run() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	defer a.sched.Shutdown()
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sig)
@@ -123,7 +131,7 @@ func (a *App) Run() {
 }
 
 func (a *App) runStage(ctx context.Context, stage Stage) {
-	a.sched.RunStage(ctx, scheduler.Stage(stage), a.world, a.diag)
+	a.sched.RunStage(ctx, scheduler.Stage(stage), a.world)
 }
 
 func (a *App) World() *ecs.World {

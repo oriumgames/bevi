@@ -30,9 +30,11 @@ func (s *systemSorter) Less(i, j int) bool { return s.systems[i].Name < s.system
 
 // Scheduler manages system execution order and parallelization.
 type Scheduler struct {
-	mu      sync.RWMutex
-	systems map[Stage][]*System
-	batches map[Stage][][]*System
+	mu        sync.RWMutex
+	systems   map[Stage][]*System
+	batches   map[Stage][][]*System
+	typeIndex *TypeIndex
+	diag      Diagnostics
 
 	// Worker pool
 	maxWorkers    int
@@ -55,6 +57,7 @@ func NewScheduler() *Scheduler {
 	return &Scheduler{
 		systems:    make(map[Stage][]*System),
 		batches:    make(map[Stage][][]*System),
+		typeIndex:  &TypeIndex{},
 		maxWorkers: max(runtime.GOMAXPROCS(0), 1),
 		jobPool: sync.Pool{
 			New: func() any { return new(job) },
@@ -76,7 +79,7 @@ func (s *Scheduler) AddSystem(sys *System) {
 	defer s.mu.Unlock()
 
 	// Precompute access sets for faster conflict checks
-	sys.Meta.Access.PrepareSets()
+	sys.Meta.Access.PrepareSets(s.typeIndex)
 
 	// Cache typed function if signature matches to avoid repeated type assertions at runtime
 	if fn, ok := sys.Fn.(func(context.Context, any)); ok {
@@ -92,13 +95,27 @@ func (s *Scheduler) AddSystem(sys *System) {
 	s.batches[sys.Stage] = nil // Invalidate batches
 }
 
+// SetDiagnostics sets the diagnostics implementation.
+func (s *Scheduler) SetDiagnostics(d Diagnostics) {
+	s.diag = d
+}
+
 // Build computes the execution order and parallel batches for all stages.
 func (s *Scheduler) Build() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	newBatches := make(map[Stage][][]*System, len(s.systems))
-	for stage, systems := range s.systems {
+
+	// Process stages in deterministic order
+	stages := make([]Stage, 0, len(s.systems))
+	for stage := range s.systems {
+		stages = append(stages, stage)
+	}
+	sort.Slice(stages, func(i, j int) bool { return stages[i] < stages[j] })
+
+	for _, stage := range stages {
+		systems := s.systems[stage]
 		// Clear reusable data structures for this stage.
 		for k := range s.nameToSys {
 			delete(s.nameToSys, k)
@@ -222,7 +239,14 @@ func (s *Scheduler) topologicalSort(systems []*System) ([]*System, error) {
 		zero = zero[1:]
 		result = append(result, cur)
 
+		// Iterate neighbors deterministically
+		neighbors := make([]*System, 0, len(s.outgoing[cur]))
 		for neigh := range s.outgoing[cur] {
+			neighbors = append(neighbors, neigh)
+		}
+		sort.Slice(neighbors, func(i, j int) bool { return neighbors[i].Name < neighbors[j].Name })
+
+		for _, neigh := range neighbors {
 			s.inDegree[neigh]--
 			if s.inDegree[neigh] == 0 {
 				zero = append(zero, neigh)
@@ -350,7 +374,14 @@ func (s *Scheduler) computeBatches(systems []*System) [][]*System {
 				}
 			}
 			for _, sys := range batch {
+				// Iterate neighbors deterministically
+				neighbors := make([]*System, 0, len(s.outgoing[sys]))
 				for neigh := range s.outgoing[sys] {
+					neighbors = append(neighbors, neigh)
+				}
+				sort.Slice(neighbors, func(i, j int) bool { return neighbors[i].Name < neighbors[j].Name })
+
+				for _, neigh := range neighbors {
 					s.inDegree[neigh]--
 					if s.inDegree[neigh] == 0 {
 						nextReadySet[neigh] = true
@@ -384,7 +415,7 @@ type Diagnostics interface {
 }
 
 // RunStage executes all systems for the given stage.
-func (s *Scheduler) RunStage(ctx context.Context, stage Stage, w any, diag Diagnostics) {
+func (s *Scheduler) RunStage(ctx context.Context, stage Stage, w any) {
 	// Ensure the worker pool is running. This is safe to call multiple times
 	s.Startup()
 
@@ -412,7 +443,7 @@ func (s *Scheduler) RunStage(ctx context.Context, stage Stage, w any, diag Diagn
 			j.ctx = ctx
 			j.sys = sys
 			j.w = w
-			j.diag = diag
+			j.diag = s.diag
 			j.wg = batchWG
 			s.work <- j
 		}

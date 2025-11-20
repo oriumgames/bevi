@@ -60,32 +60,22 @@ func (r *Reader[T]) ForEach(yield func(T) bool) {
 	}
 
 	// Now, iterate and process.
-	for _, ent := range entries {
+	for i, ent := range entries {
 		r.cur = ent
-		cont := true
 		// Only yield if the entry is not done; otherwise, just clean it up.
 		if !ent.IsDone() {
-			cont = yield(ent.val)
+			if !yield(ent.val) {
+				ent.decAndMaybeClose()
+				// If we stopped early, we still need to decrement the pending count
+				// for all the remaining entries we registered but didn't process.
+				// The current entry `ent` has already been decremented.
+				for j := i + 1; j < len(entries); j++ {
+					entries[j].decAndMaybeClose()
+				}
+				break
+			}
 		}
 		ent.decAndMaybeClose()
-		if !cont {
-			// If we stopped early, we still need to decrement the pending count
-			// for all the remaining entries we registered but didn't process.
-			// The current entry `ent` has already been decremented.
-			idx := -1
-			for i, e := range entries {
-				if e == ent {
-					idx = i
-					break
-				}
-			}
-			if idx != -1 {
-				for i := idx + 1; i < len(entries); i++ {
-					entries[i].decAndMaybeClose()
-				}
-			}
-			break
-		}
 	}
 	r.cur = nil
 }

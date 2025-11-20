@@ -143,7 +143,7 @@ type FilterOptions struct {
 
 // trimQuotes removes surrounding single or double quotes, if present.
 func trimQuotes(s string) string {
-	if len(s) >= 2 && ((s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'')) {
+	if len(s) >= 2 && ((s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '`' && s[len(s)-1] == '`')) {
 		return s[1 : len(s)-1]
 	}
 	return s
@@ -155,9 +155,20 @@ func splitTopLevel(s string) []string {
 	var cur strings.Builder
 	depth := 0
 	inQuote := rune(0)
+	escaped := false
 	for _, r := range s {
+		if escaped {
+			cur.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			cur.WriteRune(r)
+			escaped = true
+			continue
+		}
 		switch r {
-		case '"', '\'':
+		case '"', '\'', '`':
 			if inQuote == 0 {
 				inQuote = r
 			} else if inQuote == r {
@@ -199,9 +210,20 @@ func splitTopLevelByComma(s string) []string {
 	var cur strings.Builder
 	depth := 0
 	inQuote := rune(0)
+	escaped := false
 	for _, r := range s {
+		if escaped {
+			cur.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			cur.WriteRune(r)
+			escaped = true
+			continue
+		}
 		switch r {
-		case '"', '\'':
+		case '"', '\'', '`':
 			if inQuote == 0 {
 				inQuote = r
 			} else if inQuote == r {

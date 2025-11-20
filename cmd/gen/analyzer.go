@@ -283,17 +283,6 @@ type ParamInferAnalyzer struct{}
 
 func (ParamInferAnalyzer) Name() string { return "ParamInferAnalyzer" }
 
-var (
-	reContext     = regexp.MustCompile(`^context\.Context$`)
-	reWorld       = regexp.MustCompile(`^\*?ecs\.World$`)
-	reECSMap      = regexp.MustCompile(`^ecs\.Map\d+\[(.+)\]$`)
-	reECSQuery    = regexp.MustCompile(`^ecs\.Query\d+\[(.+)\]$`)
-	reECSFilter   = regexp.MustCompile(`^ecs\.Filter\d+\[(.+)\]$`)
-	reECSResource = regexp.MustCompile(`^ecs\.Resource\[(.+)\]$`)
-	reEventWriter = regexp.MustCompile(`^bevi\.EventWriter\[(.+)\]$`)
-	reEventReader = regexp.MustCompile(`^bevi\.EventReader\[(.+)\]$`)
-)
-
 func (ParamInferAnalyzer) Run(ctx *Context) error {
 	for _, pkg := range ctx.Packages {
 		// Build index of systems by file+func for quick lookup.
@@ -318,16 +307,13 @@ func (ParamInferAnalyzer) Run(ctx *Context) error {
 				// Collect parameters in original order
 				if fd.Type.Params != nil {
 					for _, f := range fd.Type.Params.List {
+						// Use AST inspection instead of regex on string representation
+						p := inferParam(f.Type)
+
+						// Capture the full type expression string for debugging/logging
 						var buf bytes.Buffer
 						_ = format.Node(&buf, token.NewFileSet(), f.Type)
-						typeExpr := buf.String()
-
-						// Detect pointer marker at the param root, e.g., *ecs.Query1[T]
-						norm := normalizeTypeExpr(typeExpr)
-						pointer := strings.HasPrefix(norm, "*")
-						target := strings.TrimPrefix(norm, "*")
-
-						p := inferParamFromType(target, typeExpr, pointer)
+						p.TypeExpr = buf.String()
 
 						// Preserve parameter names when present; otherwise, append anonymous param once.
 						if len(f.Names) == 0 {
@@ -401,41 +387,86 @@ func indexSystemsByFileFunc(pkg *Package) (map[string]*System, error) {
 	return m, nil
 }
 
-func inferParamFromType(normalizedNoStar string, originalExpr string, pointer bool) Param {
-	// Decide parameter kind based on normalized type string (without leading '*')
-	out := Param{TypeExpr: originalExpr, Pointer: pointer}
-	switch {
-	case reContext.MatchString(normalizedNoStar) && !pointer:
-		out.Kind = ParamContext
-	case reWorld.MatchString(normalizedNoStar):
-		out.Kind = ParamWorld
-	case reECSMap.MatchString(normalizedNoStar):
-		out.Kind = ParamECSMap
-		out.ElemTypes = splitGenericArgs(reECSMap.FindStringSubmatch(normalizedNoStar)[1])
-		out.HelperKey = "map:" + strings.Join(out.ElemTypes, ",")
-	case reECSQuery.MatchString(normalizedNoStar):
-		out.Kind = ParamECSQuery
-		out.ElemTypes = splitGenericArgs(reECSQuery.FindStringSubmatch(normalizedNoStar)[1])
-		out.HelperKey = "query:" + strings.Join(out.ElemTypes, ",")
-		// Note: out.Pointer already indicates *ecs.QueryN[...] (pointer-marked) for write intent.
-	case reECSFilter.MatchString(normalizedNoStar):
-		out.Kind = ParamECSFilter
-		out.ElemTypes = splitGenericArgs(reECSFilter.FindStringSubmatch(normalizedNoStar)[1])
-		out.HelperKey = "flt:" + strings.Join(out.ElemTypes, ",")
-	case reECSResource.MatchString(normalizedNoStar):
-		out.Kind = ParamECSResource
-		out.ElemTypes = splitGenericArgs(reECSResource.FindStringSubmatch(normalizedNoStar)[1])
-		out.HelperKey = "res:" + strings.Join(out.ElemTypes, ",")
-	case reEventWriter.MatchString(normalizedNoStar):
-		out.Kind = ParamEventWriter
-		out.ElemTypes = splitGenericArgs(reEventWriter.FindStringSubmatch(normalizedNoStar)[1])
-		out.HelperKey = "ew:" + strings.Join(out.ElemTypes, ",")
-	case reEventReader.MatchString(normalizedNoStar):
-		out.Kind = ParamEventReader
-		out.ElemTypes = splitGenericArgs(reEventReader.FindStringSubmatch(normalizedNoStar)[1])
-		out.HelperKey = "er:" + strings.Join(out.ElemTypes, ",")
-	default:
-		out.Kind = ParamUnknown
+func inferParam(expr ast.Expr) Param {
+	var p Param
+
+	// Check for pointer
+	if star, ok := expr.(*ast.StarExpr); ok {
+		p.Pointer = true
+		expr = star.X
 	}
-	return out
+
+	// Handle generics (IndexExpr / IndexListExpr)
+	var typeArgs []ast.Expr
+	var baseExpr ast.Expr = expr
+
+	if idx, ok := expr.(*ast.IndexExpr); ok {
+		baseExpr = idx.X
+		typeArgs = []ast.Expr{idx.Index}
+	} else if idxList, ok := expr.(*ast.IndexListExpr); ok {
+		baseExpr = idxList.X
+		typeArgs = idxList.Indices
+	}
+
+	// Resolve type name (e.g. "context.Context", "ecs.Query1")
+	typeName := ""
+	if sel, ok := baseExpr.(*ast.SelectorExpr); ok {
+		if xIdent, ok := sel.X.(*ast.Ident); ok {
+			typeName = xIdent.Name + "." + sel.Sel.Name
+		}
+	} else if ident, ok := baseExpr.(*ast.Ident); ok {
+		typeName = ident.Name
+	}
+
+	// Determine Kind
+	switch {
+	case typeName == "context.Context" && !p.Pointer:
+		p.Kind = ParamContext
+	case typeName == "ecs.World": // *ecs.World or ecs.World
+		p.Kind = ParamWorld
+	case strings.HasPrefix(typeName, "ecs.Map"):
+		p.Kind = ParamECSMap
+	case strings.HasPrefix(typeName, "ecs.Query"):
+		p.Kind = ParamECSQuery
+	case strings.HasPrefix(typeName, "ecs.Filter"):
+		p.Kind = ParamECSFilter
+	case typeName == "ecs.Resource":
+		p.Kind = ParamECSResource
+	case typeName == "bevi.EventWriter":
+		p.Kind = ParamEventWriter
+	case typeName == "bevi.EventReader":
+		p.Kind = ParamEventReader
+	default:
+		p.Kind = ParamUnknown
+	}
+
+	// Process type arguments if present
+	if len(typeArgs) > 0 {
+		for _, arg := range typeArgs {
+			var b bytes.Buffer
+			format.Node(&b, token.NewFileSet(), arg)
+			p.ElemTypes = append(p.ElemTypes, b.String())
+		}
+
+		prefix := ""
+		switch p.Kind {
+		case ParamECSMap:
+			prefix = "map:"
+		case ParamECSQuery:
+			prefix = "query:"
+		case ParamECSFilter:
+			prefix = "flt:"
+		case ParamECSResource:
+			prefix = "res:"
+		case ParamEventWriter:
+			prefix = "ew:"
+		case ParamEventReader:
+			prefix = "er:"
+		}
+		if prefix != "" {
+			p.HelperKey = prefix + strings.Join(p.ElemTypes, ",")
+		}
+	}
+
+	return p
 }

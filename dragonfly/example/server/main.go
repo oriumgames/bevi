@@ -27,10 +27,11 @@ func main() {
 
 //bevi:system Update
 func DenyBlockBreak(
+	srv ecs.Resource[dragonfly.Server],
 	r bevi.EventReader[dragonfly.PlayerBlockBreak],
 ) {
-	r.ForEach(func(ev dragonfly.PlayerBlockBreak) bool {
-		ev.Player.Message("You can't break blocks here.")
+	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerBlockBreak, p *dragonfly.Player) bool {
+		p.Message("You can't break blocks here.")
 		r.Cancel()
 		return true
 	})
@@ -38,21 +39,22 @@ func DenyBlockBreak(
 
 //bevi:system Update Reads={dragonfly.Player}
 func WelcomeOnJoin(
+	srv ecs.Resource[dragonfly.Server],
 	r bevi.EventReader[dragonfly.PlayerJoin],
 	f *ecs.Filter1[dragonfly.Player],
 ) {
-	r.ForEach(func(ev dragonfly.PlayerJoin) bool {
+	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerJoin, p *dragonfly.Player) bool {
 		// Greet the joining player
-		ev.Player.Message("Welcome to the server! Say \"count\" to see how many players are online.")
+		p.Message("Welcome to the server! Say \"count\" to see how many players are online.")
 
 		// Announce to everyone else
 		q := f.Query()
 		for q.Next() {
-			p := q.Get()
-			if p == ev.Player {
+			c := q.Get()
+			if c == p {
 				continue
 			}
-			p.Message(fmt.Sprintf("%s joined the server.", ev.Player.Name()))
+			c.Message(fmt.Sprintf("%s joined the server.", p.Name()))
 		}
 		return true
 	})
@@ -60,18 +62,19 @@ func WelcomeOnJoin(
 
 //bevi:system Update Reads={dragonfly.Player}
 func FarewellOnQuit(
+	srv ecs.Resource[dragonfly.Server],
 	r bevi.EventReader[dragonfly.PlayerQuit],
 	f *ecs.Filter1[dragonfly.Player],
 ) {
-	r.ForEach(func(ev dragonfly.PlayerQuit) bool {
+	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerQuit, p *dragonfly.Player) bool {
 		// Announce to everyone else
 		q := f.Query()
 		for q.Next() {
-			p := q.Get()
-			if p == ev.Player {
+			c := q.Get()
+			if c == p {
 				continue
 			}
-			p.Message(fmt.Sprintf("%s left the server.", ev.Player.Name()))
+			c.Message(fmt.Sprintf("%s left the server.", p.Name()))
 		}
 		return true
 	})
@@ -79,12 +82,13 @@ func FarewellOnQuit(
 
 //bevi:system Update Reads={dragonfly.Player}
 func ChatFilterAndCount(
+	srv ecs.Resource[dragonfly.Server],
 	r bevi.EventReader[dragonfly.PlayerChat],
 	f *ecs.Filter1[dragonfly.Player],
 ) {
 	const badWord = "badword" // trivial example; replace with your list or smarter checker
 
-	r.ForEach(func(ev dragonfly.PlayerChat) bool {
+	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerChat, p *dragonfly.Player) bool {
 		if ev.Message == nil {
 			return true // continue
 		}
@@ -93,7 +97,7 @@ func ChatFilterAndCount(
 
 		// Very simple profanity filter
 		if strings.Contains(lmsg, badWord) {
-			ev.Player.Message("Please keep chat clean.")
+			p.Message("Please keep chat clean.")
 			r.Cancel()
 			return true // continue
 		}
@@ -101,7 +105,7 @@ func ChatFilterAndCount(
 		// Respond to "count" message
 		if strings.EqualFold(strings.TrimSpace(msg), "count") {
 			q := f.Query()
-			ev.Player.Message(fmt.Sprintf("There are %d players online.", q.Count()))
+			p.Message(fmt.Sprintf("There are %d players online.", q.Count()))
 			// suppress normal chat broadcast by cancelling the event
 			r.Cancel()
 		}
