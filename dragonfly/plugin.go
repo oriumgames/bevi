@@ -57,15 +57,17 @@ func (p *Plugin) Build(app *bevi.App) {
 func emitPlayerJoin(
 	w *bevi.World,
 	mapper *bevi.Map1[Player],
-	srv bevi.Resource[Server],
+	srvRes bevi.Resource[Server],
 	r bevi.EventReader[playerCreate],
 	out bevi.EventWriter[PlayerJoin],
 ) {
+	srv := srvRes.Get()
 	r.ForEach(func(ev playerCreate) bool {
 		e := w.NewEntity()
 		dp := &Player{
 			h: ev.p.H(),
 			e: e,
+			w: srv.World(),
 
 			name: ev.p.Name(),
 			xuid: ev.p.XUID(),
@@ -73,7 +75,7 @@ func emitPlayerJoin(
 		}
 
 		mapper.Add(e, dp)
-		srv.Get().addPlayer(dp)
+		srv.addPlayer(dp)
 
 		out.Emit(PlayerJoin{
 			Player: dp,

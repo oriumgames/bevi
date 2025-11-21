@@ -16,6 +16,7 @@ import (
 type Player struct {
 	e bevi.Entity
 	h *world.EntityHandle
+	w *world.World
 
 	name string
 	xuid string
@@ -44,8 +45,12 @@ func (p *Player) Handle() *world.EntityHandle {
 	return p.h
 }
 
-func (p *Player) Exec(f func(*world.Tx, *player.Player)) bool {
-	return p.h.ExecWorld(func(tx *world.Tx, e world.Entity) {
+func (p *Player) Exec(f func(*world.Tx, *player.Player)) <-chan struct{} {
+	return p.w.Exec(func(tx *world.Tx) {
+		e, ok := p.h.Entity(tx)
+		if !ok {
+			return
+		}
 		f(tx, e.(*player.Player))
 	})
 }
