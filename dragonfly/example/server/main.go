@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/df-mc/dragonfly/server"
-	"github.com/oriumgames/ark/ecs"
+	"github.com/mlange-42/ark/ecs"
 	"github.com/oriumgames/bevi"
 	"github.com/oriumgames/bevi/dragonfly"
 )

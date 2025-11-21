@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/oriumgames/ark/ecs"
+	"github.com/mlange-42/ark/ecs"
 	"github.com/oriumgames/bevi/internal/event"
 	"github.com/oriumgames/bevi/internal/scheduler"
 )

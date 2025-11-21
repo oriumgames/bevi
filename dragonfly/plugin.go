@@ -7,7 +7,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server"
 	"github.com/go-gl/mathgl/mgl64"
-	"github.com/oriumgames/ark/ecs"
+	"github.com/mlange-42/ark/ecs"
 	"github.com/oriumgames/bevi"
 )
 

@@ -13,7 +13,7 @@ import (
 	"github.com/df-mc/dragonfly/server/session"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
-	"github.com/oriumgames/ark/ecs"
+	"github.com/mlange-42/ark/ecs"
 )
 
 // Player events.
