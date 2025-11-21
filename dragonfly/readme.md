@@ -49,7 +49,7 @@ Connect using a Minecraft Bedrock client to see:
 Add Bevi and Bevi-DF:
 
 ```bash
-go get github.com/oriumgames/bevi@v0.1.6
+go get github.com/oriumgames/bevi@v0.1.7
 go get github.com/oriumgames/bevi/dragonfly@v0.2.1
 ```
 
@@ -58,7 +58,7 @@ Create an app, add the Dragonfly plugin, and wire your systems:
 ```go
 package main
 
-//go:generate go run github.com/oriumgames/bevi/cmd/gen@v0.1.6
+//go:generate go run github.com/oriumgames/bevi/cmd/gen@v0.1.7
 
 import (
 	"log/slog"
