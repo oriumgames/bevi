@@ -6,8 +6,8 @@ require (
 	github.com/df-mc/dragonfly v0.10.9-0.20251005013339-1872684e6f38
 	github.com/go-gl/mathgl v1.2.0
 	github.com/google/uuid v1.6.0
-	github.com/oriumgames/ark v0.6.5
-	github.com/oriumgames/bevi v0.1.8
+	github.com/mlange-42/ark v0.6.4
+	github.com/oriumgames/bevi v0.1.9
 )
 
 require (

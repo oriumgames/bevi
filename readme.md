@@ -12,14 +12,14 @@
 Add the runtime to your module:
 
 ```bash
-go get github.com/oriumgames/bevi@v0.1.8
+go get github.com/oriumgames/bevi@v0.1.9
 ```
 
 Optionally install the generator:
 
 ```bash
 # As a binary you can call directly (name depends on your shell/OS, shown here via go run)
-go install github.com/oriumgames/bevi/cmd/gen@v0.1.8
+go install github.com/oriumgames/bevi/cmd/gen@v0.1.9
 ```
 
 You can also run the generator without installing:
@@ -29,7 +29,7 @@ You can also run the generator without installing:
 go run ./cmd/gen -root .
 
 # From another module (using the latest published version)
-go run github.com/oriumgames/bevi/cmd/gen@v0.1.8 -root .
+go run github.com/oriumgames/bevi/cmd/gen@v0.1.9 -root .
 ```
 
 
@@ -66,7 +66,7 @@ func PrintCount(q ecs.Query1[Position]) {
 
 2) Generate glue code:
 ```bash
-go run github.com/oriumgames/bevi/cmd/gen@v0.1.8 -root . -write
+go run github.com/oriumgames/bevi/cmd/gen@v0.1.9 -root . -write
 ```
 This writes `bevi_gen.go` next to your files and creates a function:
 ```go
