@@ -118,6 +118,52 @@ The generator also infers access from parameters:
 
 The generator synthesizes helpers once per package (mappers, filters, resources, event readers/writers), wires everything in a single `Systems(app *bevi.App)` function. It does not auto-close queries; only call `Close()` yourself when you exit iteration early.
 
+### Query lifetime
+
+- Fully iterated queries must NOT be closed.
+- If you exit iteration early, you MUST call `Close()` before leaving the loop.
+- If you need to iterate multiple times (e.g., once per event), create a fresh query each time (prefer passing an `ecs.FilterN[...]` and doing `q := filter.Query()` per pass).
+
+Full iteration (no Close):
+```go
+func System(q ecs.Query2[A,B]) {
+    for q.Next() {
+        a, b := q.Get()
+        _ = a; _ = b
+    }
+    // do not call q.Close() here
+}
+```
+
+Early exit (must Close):
+```go
+func System(q *ecs.Query2[A,B]) {
+    for q.Next() {
+        a, b := q.Get()
+        if stop(a, b) {
+            q.Close() // required when exiting early
+            break
+        }
+    }
+}
+```
+
+Iterate per event (fresh query per pass):
+```go
+//bevi:system Update Writes={A}
+func Apply(reader bevi.EventReader[E], flt ecs.Filter1[A]) {
+    reader.ForEach(func(e E) bool {
+        q := flt.Query() // new cursor each time
+        for q.Next() {
+            a := q.Get()
+            // mutate a
+        }
+        // fully iterated -> no Close()
+        return true // continue to next event
+    })
+}
+```
+
 ### Filter DSL for queries and filters
 
 You can refine `ecs.FilterN` (and filters used to spawn queries) via extra doc lines:
