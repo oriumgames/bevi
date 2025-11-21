@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/df-mc/dragonfly/server"
+	"github.com/df-mc/dragonfly/server/player"
+	"github.com/df-mc/dragonfly/server/world"
 	"github.com/oriumgames/bevi"
 	"github.com/oriumgames/bevi/dragonfly"
 )
@@ -26,11 +28,13 @@ func main() {
 
 //bevi:system Update
 func DenyBlockBreak(
-	srv bevi.Resource[dragonfly.Server],
+	w *bevi.World,
 	r bevi.EventReader[dragonfly.PlayerBlockBreak],
 ) {
-	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerBlockBreak, p *dragonfly.Player) bool {
-		p.Message("You can't break blocks here.")
+	dragonfly.Receive(w, r, func(ev dragonfly.PlayerBlockBreak) bool {
+		ev.Player.Exec(func(tx *world.Tx, p *player.Player) {
+			p.Message("You can't break blocks here.")
+		})
 		r.Cancel()
 		return true
 	})
@@ -38,22 +42,26 @@ func DenyBlockBreak(
 
 //bevi:system Update Reads={dragonfly.Player}
 func WelcomeOnJoin(
-	srv bevi.Resource[dragonfly.Server],
+	w *bevi.World,
 	r bevi.EventReader[dragonfly.PlayerJoin],
 	f *bevi.Filter1[dragonfly.Player],
 ) {
-	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerJoin, p *dragonfly.Player) bool {
+	dragonfly.Receive(w, r, func(ev dragonfly.PlayerJoin) bool {
 		// Greet the joining player
-		p.Message("Welcome to the server! Say \"count\" to see how many players are online.")
+		ev.Player.Exec(func(tx *world.Tx, p *player.Player) {
+			p.Message("Welcome to the server! Say \"count\" to see how many players are online.")
+		})
 
 		// Announce to everyone else
 		q := f.Query()
 		for q.Next() {
 			c := q.Get()
-			if c == p {
+			if c == ev.Player {
 				continue
 			}
-			c.Message(fmt.Sprintf("%s joined the server.", p.Name()))
+			c.Exec(func(tx *world.Tx, p *player.Player) {
+				p.Message(fmt.Sprintf("%s joined the server.", ev.Player.Name()))
+			})
 		}
 		return true
 	})
@@ -61,19 +69,21 @@ func WelcomeOnJoin(
 
 //bevi:system Update Reads={dragonfly.Player}
 func FarewellOnQuit(
-	srv bevi.Resource[dragonfly.Server],
+	w *bevi.World,
 	r bevi.EventReader[dragonfly.PlayerQuit],
 	f *bevi.Filter1[dragonfly.Player],
 ) {
-	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerQuit, p *dragonfly.Player) bool {
+	dragonfly.Receive(w, r, func(ev dragonfly.PlayerQuit) bool {
 		// Announce to everyone else
 		q := f.Query()
 		for q.Next() {
 			c := q.Get()
-			if c == p {
+			if c == ev.Player {
 				continue
 			}
-			c.Message(fmt.Sprintf("%s left the server.", p.Name()))
+			c.Exec(func(tx *world.Tx, c *player.Player) {
+				c.Message(fmt.Sprintf("%s left the server.", ev.Player.Name()))
+			})
 		}
 		return true
 	})
@@ -81,13 +91,13 @@ func FarewellOnQuit(
 
 //bevi:system Update Reads={dragonfly.Player}
 func ChatFilterAndCount(
-	srv bevi.Resource[dragonfly.Server],
+	w *bevi.World,
 	r bevi.EventReader[dragonfly.PlayerChat],
 	f *bevi.Filter1[dragonfly.Player],
 ) {
 	const badWord = "badword" // trivial example; replace with your list or smarter checker
 
-	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerChat, p *dragonfly.Player) bool {
+	dragonfly.Receive(w, r, func(ev dragonfly.PlayerChat) bool {
 		if ev.Message == nil {
 			return true // continue
 		}
@@ -96,7 +106,9 @@ func ChatFilterAndCount(
 
 		// Very simple profanity filter
 		if strings.Contains(lmsg, badWord) {
-			p.Message("Please keep chat clean.")
+			ev.Player.Exec(func(tx *world.Tx, p *player.Player) {
+				p.Message("Please keep chat clean.")
+			})
 			r.Cancel()
 			return true // continue
 		}
@@ -104,7 +116,10 @@ func ChatFilterAndCount(
 		// Respond to "count" message
 		if strings.EqualFold(strings.TrimSpace(msg), "count") {
 			q := f.Query()
-			p.Message(fmt.Sprintf("There are %d players online.", q.Count()))
+			ev.Player.Exec(func(tx *world.Tx, p *player.Player) {
+				p.Message(fmt.Sprintf("There are %d players online.", q.Count()))
+			})
+
 			// suppress normal chat broadcast by cancelling the event
 			r.Cancel()
 		}
@@ -121,7 +136,9 @@ func BroadcastPlayerCount(
 
 	// then announce to everyone
 	for q.Next() {
-		p := q.Get()
-		p.Message(fmt.Sprintf("Players online: %d", n))
+		dp := q.Get()
+		dp.Exec(func(tx *world.Tx, p *player.Player) {
+			p.Message(fmt.Sprintf("Players online: %d", n))
+		})
 	}
 }

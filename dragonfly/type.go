@@ -5,6 +5,7 @@ import (
 
 	"github.com/df-mc/dragonfly/server"
 	"github.com/df-mc/dragonfly/server/player"
+	"github.com/df-mc/dragonfly/server/world"
 	"github.com/google/uuid"
 	"github.com/oriumgames/bevi"
 )
@@ -13,13 +14,40 @@ import (
 // This allows systems to treat runtime players as ECS components/resources;
 // the underlying player pointer is embedded for direct API access.
 type Player struct {
-	*player.Player
 	e bevi.Entity
+	h *world.EntityHandle
+
+	name string
+	xuid string
+	uuid uuid.UUID
+}
+
+func (p *Player) Name() string {
+	return p.name
+}
+
+func (p *Player) XUID() string {
+	return p.xuid
+}
+
+func (p *Player) UUID() uuid.UUID {
+	return p.uuid
 }
 
 // Entity returns the ECS entity associated with this player.
 func (p *Player) Entity() bevi.Entity {
 	return p.e
+}
+
+// Handle returns the Dragonfly entity handle associated with this player.
+func (p *Player) Handle() *world.EntityHandle {
+	return p.h
+}
+
+func (p *Player) Exec(f func(*world.Tx, *player.Player)) bool {
+	return p.h.ExecWorld(func(tx *world.Tx, e world.Entity) {
+		f(tx, e.(*player.Player))
+	})
 }
 
 // Server embeds the underlying dragonfly *server.Server and maintains a

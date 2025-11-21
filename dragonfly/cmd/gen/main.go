@@ -119,20 +119,19 @@ import (
 	"github.com/df-mc/dragonfly/server/session"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
-	"github.com/oriumgames/bevi"
 )
 
 // Player events.
 // These map 1:1 to github.com/df-mc/dragonfly/server/player.Handler methods.
 
 type PlayerEvent interface {
-	Player() bevi.Entity
+	PlayerRef() *Player
 }
 
 {{range .}}
 // Player{{.Name}} {{if .Cancellable}}is a cancellable event and {{end}}corresponds to Handle{{.Name}}({{.Context}}{{range .Params}}, {{.Name}} {{.Type}}{{end}}).
 type Player{{.Name}} struct {
-	Entity bevi.Entity
+	Player *Player
 {{- range .Params}}
 	{{.Name | toExported}} {{.Type}}
 {{- end}}
@@ -141,14 +140,15 @@ type Player{{.Name}} struct {
 {{- end}}
 }
 
-func (p Player{{.Name}}) Player() bevi.Entity { return p.Entity }
+func (p Player{{.Name}}) PlayerRef() *Player { return p.Player }
 {{end}}
 
 // PreQuit is special
 type PlayerPreQuit struct {
-	Entity bevi.Entity
+	Player *Player
 }
-func (p PlayerPreQuit) Player() bevi.Entity { return p.Entity }
+
+func (p PlayerPreQuit) PlayerRef() *Player { return p.Player }
 
 // strictly internal, not for external consumption
 type playerCreate struct {
@@ -156,7 +156,7 @@ type playerCreate struct {
 }
 
 type playerRemove struct {
-	id bevi.Entity
+	dp *Player
 	wg *sync.WaitGroup
 }
 `
@@ -223,36 +223,36 @@ func (h *playerHandler) Handle{{.Name}}({{.Context}}{{range .Params}}, {{.Name}}
 		p: p,
 	})
 {{- else if eq .Name "Quit"}}
-	id, ok := h.srv.PlayerEntity(p.UUID())
+	dp, ok := h.srv.PlayerByUUID(p.UUID())
 	if !ok {
 		return
 	}
 
 	h.preQuit.Emit(PlayerPreQuit{
-		Entity: id,
+		Player: dp,
 	})
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 
 	h.remove.Emit(playerRemove{
-		id: id,
+		dp: dp,
 		wg: &wg,
 	})
 
 	wg.Wait()
 {{- else}}
 	{{- if hasPrefix .Context "p *player.Player"}}
-	id, ok := h.srv.PlayerEntity(p.UUID())
+	dp, ok := h.srv.PlayerByUUID(p.UUID())
 	{{- else}}
-	id, ok := h.srv.PlayerEntity(ctx.Val().UUID())
+	dp, ok := h.srv.PlayerByUUID(ctx.Val().UUID())
 	{{- end}}
 	if !ok {
 		return
 	}
 	{{- if .Cancellable}}
 	if h.{{.Name | lowerFirst}}.EmitResult(Player{{.Name}}{
-		Entity: id,
+		Player: dp,
 	{{- range .Params}}
 		{{.Name | toExported}}: {{.Name}},
 	{{- end}}
@@ -261,7 +261,7 @@ func (h *playerHandler) Handle{{.Name}}({{.Context}}{{range .Params}}, {{.Name}}
 	}
 	{{- else}}
 	h.{{.Name | lowerFirst}}.Emit(Player{{.Name}}{
-		Entity: id,
+		Player: dp,
 	{{- range .Params}}
 		{{.Name | toExported}}: {{.Name}},
 	{{- end}}

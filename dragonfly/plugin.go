@@ -63,16 +63,20 @@ func emitPlayerJoin(
 ) {
 	r.ForEach(func(ev playerCreate) bool {
 		e := w.NewEntity()
-		ip := &Player{
-			Player: ev.p,
-			e:      e,
+		dp := &Player{
+			h: ev.p.H(),
+			e: e,
+
+			name: ev.p.Name(),
+			xuid: ev.p.XUID(),
+			uuid: ev.p.UUID(),
 		}
 
-		mapper.Add(e, ip)
-		srv.Get().addPlayer(ip)
+		mapper.Add(e, dp)
+		srv.Get().addPlayer(dp)
 
 		out.Emit(PlayerJoin{
-			Entity: e,
+			Player: dp,
 		})
 		return true
 	})
@@ -87,7 +91,7 @@ func publishPlayerQuit(
 ) {
 	reader.ForEach(func(ev playerRemove) bool {
 		writer.Emit(PlayerQuit{
-			Entity: ev.id,
+			Player: ev.dp,
 			wg:     ev.wg,
 		})
 		return true
@@ -99,10 +103,12 @@ func publishPlayerQuit(
 //bevi:system PostUpdate Set="dragonfly"
 func handlePlayerRemoval(
 	w *bevi.World,
+	srv bevi.Resource[Server],
 	r bevi.EventReader[playerRemove],
 ) {
 	r.ForEach(func(ev playerRemove) bool {
-		w.RemoveEntity(ev.id)
+		srv.Get().removePlayer(ev.dp)
+		w.RemoveEntity(ev.dp.e)
 		ev.wg.Done()
 		return true
 	})

@@ -1,18 +1,14 @@
 package dragonfly
 
 import (
-	"fmt"
-
 	"github.com/oriumgames/bevi"
 )
 
-func Receive[T PlayerEvent](srv bevi.Resource[Server], r bevi.EventReader[T], yield func(T, *Player) bool) {
+func Receive[T PlayerEvent](w *bevi.World, r bevi.EventReader[T], yield func(T) bool) {
 	r.ForEach(func(t T) bool {
-		fmt.Println(t)
-		p, ok := srv.Get().Player(t.Player())
-		if !ok {
+		if !w.Alive(t.PlayerRef().e) {
 			return true
 		}
-		return yield(t, p)
+		return yield(t)
 	})
 }
