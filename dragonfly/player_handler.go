@@ -17,7 +17,7 @@ import (
 	"github.com/oriumgames/bevi"
 )
 
-// playerHandler bridges Dragonfly player events to the ecs.
+// playerHandler bridges Dragonfly player events to the ECS.
 type playerHandler struct {
 	ctx   context.Context
 	srv   *Server
