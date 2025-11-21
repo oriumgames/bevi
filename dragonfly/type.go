@@ -6,7 +6,7 @@ import (
 	"github.com/df-mc/dragonfly/server"
 	"github.com/df-mc/dragonfly/server/player"
 	"github.com/google/uuid"
-	"github.com/mlange-42/ark/ecs"
+	"github.com/oriumgames/bevi"
 )
 
 // Player wraps a dragonfly *player.Player with an associated ECS entity ID.
@@ -14,11 +14,11 @@ import (
 // the underlying player pointer is embedded for direct API access.
 type Player struct {
 	*player.Player
-	e ecs.Entity
+	e bevi.Entity
 }
 
 // Entity returns the ECS entity associated with this player.
-func (p *Player) Entity() ecs.Entity {
+func (p *Player) Entity() bevi.Entity {
 	return p.e
 }
 
@@ -29,21 +29,21 @@ type Server struct {
 	*server.Server
 
 	mu sync.RWMutex
-	pU map[string]ecs.Entity
-	pN map[string]ecs.Entity
-	pX map[string]ecs.Entity
+	pU map[string]bevi.Entity
+	pN map[string]bevi.Entity
+	pX map[string]bevi.Entity
 
-	mapper *ecs.Map1[Player]
-	world  *ecs.World
+	mapper *bevi.Map1[Player]
+	world  *bevi.World
 }
 
 // newServer constructs a Server wrapper around an existing *server.Server.
-func newServer(srv *server.Server, world *ecs.World, mapper *ecs.Map1[Player]) *Server {
+func newServer(srv *server.Server, world *bevi.World, mapper *bevi.Map1[Player]) *Server {
 	return &Server{
 		Server: srv,
-		pU:     make(map[string]ecs.Entity),
-		pN:     make(map[string]ecs.Entity),
-		pX:     make(map[string]ecs.Entity),
+		pU:     make(map[string]bevi.Entity),
+		pN:     make(map[string]bevi.Entity),
+		pX:     make(map[string]bevi.Entity),
 		mapper: mapper,
 		world:  world,
 	}
@@ -67,28 +67,28 @@ func (srv *Server) removePlayer(p *Player) {
 	srv.mu.Unlock()
 }
 
-func (srv *Server) PlayerEntity(uuid uuid.UUID) (ecs.Entity, bool) {
+func (srv *Server) PlayerEntity(uuid uuid.UUID) (bevi.Entity, bool) {
 	srv.mu.RLock()
 	p, ok := srv.pU[uuid.String()]
 	srv.mu.RUnlock()
 	return p, ok
 }
 
-func (srv *Server) PlayerEntityByName(name string) (ecs.Entity, bool) {
+func (srv *Server) PlayerEntityByName(name string) (bevi.Entity, bool) {
 	srv.mu.RLock()
 	p, ok := srv.pN[name]
 	srv.mu.RUnlock()
 	return p, ok
 }
 
-func (srv *Server) PlayerEntityByXUID(xuid string) (ecs.Entity, bool) {
+func (srv *Server) PlayerEntityByXUID(xuid string) (bevi.Entity, bool) {
 	srv.mu.RLock()
 	p, ok := srv.pX[xuid]
 	srv.mu.RUnlock()
 	return p, ok
 }
 
-func (srv *Server) Player(e ecs.Entity) (*Player, bool) {
+func (srv *Server) Player(e bevi.Entity) (*Player, bool) {
 	if !srv.world.Alive(e) {
 		return nil, false
 	}

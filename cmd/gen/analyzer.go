@@ -3,7 +3,7 @@ package main
 // Analyzer implementations:
 // - SystemTagAnalyzer: finds //bevi:system ... annotations and creates System model entries.
 // - ParamInferAnalyzer: infers parameter kinds/types for each annotated system,
-//   including pointer-marked *ecs.QueryN[T] => write signal via Param.Pointer=true.
+//   including pointer-marked *bevi.QueryN[T] => write signal via Param.Pointer=true.
 //   The emitter should treat ParamECSQuery with Pointer=true as WRITE access and
 //   non-pointer queries as READ access by default.
 
@@ -408,7 +408,7 @@ func inferParam(expr ast.Expr) Param {
 		typeArgs = idxList.Indices
 	}
 
-	// Resolve type name (e.g. "context.Context", "ecs.Query1")
+	// Resolve type name (e.g. "context.Context", "bevi.Query1")
 	typeName := ""
 	if sel, ok := baseExpr.(*ast.SelectorExpr); ok {
 		if xIdent, ok := sel.X.(*ast.Ident); ok {
@@ -422,15 +422,15 @@ func inferParam(expr ast.Expr) Param {
 	switch {
 	case typeName == "context.Context" && !p.Pointer:
 		p.Kind = ParamContext
-	case typeName == "ecs.World": // *ecs.World or ecs.World
+	case typeName == "bevi.World": // *bevi.World or bevi.World
 		p.Kind = ParamWorld
-	case strings.HasPrefix(typeName, "ecs.Map"):
+	case strings.HasPrefix(typeName, "bevi.Map"):
 		p.Kind = ParamECSMap
-	case strings.HasPrefix(typeName, "ecs.Query"):
+	case strings.HasPrefix(typeName, "bevi.Query"):
 		p.Kind = ParamECSQuery
-	case strings.HasPrefix(typeName, "ecs.Filter"):
+	case strings.HasPrefix(typeName, "bevi.Filter"):
 		p.Kind = ParamECSFilter
-	case typeName == "ecs.Resource":
+	case typeName == "bevi.Resource":
 		p.Kind = ParamECSResource
 	case typeName == "bevi.EventWriter":
 		p.Kind = ParamEventWriter

@@ -6,14 +6,13 @@ import (
 	"github.com/df-mc/dragonfly/server/block/cube"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
-	"github.com/mlange-42/ark/ecs"
 	"github.com/oriumgames/bevi"
 )
 
 // worldHandler bridges Dragonfly world events to the ECS and attaches player handlers.
 type worldHandler struct {
 	ctx   context.Context
-	world *ecs.World
+	world *bevi.World
 
 	liquidFlow    bevi.EventWriter[WorldLiquidFlow]
 	liquidDecay   bevi.EventWriter[WorldLiquidDecay]

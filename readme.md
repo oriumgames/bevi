@@ -41,12 +41,12 @@ type Position struct{ X, Y float64 }
 type Velocity struct{ X, Y float64 }
 
 //bevi:system Startup
-func Spawn(mapper *ecs.Map2[Position, Velocity]) {
+func Spawn(mapper *bevi.Map2[Position, Velocity]) {
     mapper.NewEntity(&Position{X: 0, Y: 0}, &Velocity{X: 1, Y: 0.5})
 }
 
 //bevi:system Update Every=16ms
-func Move(q *ecs.Query2[Position, Velocity]) {
+func Move(q *bevi.Query2[Position, Velocity]) {
     for q.Next() {
         p, v := q.Get()
         p.X += v.X
@@ -55,7 +55,7 @@ func Move(q *ecs.Query2[Position, Velocity]) {
 }
 
 //bevi:system Update After={"Move"} Every=1s
-func PrintCount(q ecs.Query1[Position]) {
+func PrintCount(q bevi.Query1[Position]) {
     n := 0
     for q.Next() {
         _, n = q.Get(), n+1
@@ -108,65 +108,20 @@ Supported keys:
 The generator also infers access from parameters:
 
 - `context.Context` -> passed through
-- `*ecs.World` or `ecs.World` -> passed through
-- `*ecs.MapN[T...]` -> component WRITE access on T...
-- `ecs.QueryN[T...]` -> READ access by default, WRITE access if you accept a pointer `*ecs.QueryN[...]` (write intent marker)
-- `*ecs.FilterN[T...]` -> no direct access (it is a builder used to produce queries)
-- `ecs.Resource[T]` -> READ access by default, WRITE access if you accept a pointer `*ecs.Resource[T]` (write intent marker)
+- `*bevi.World` or `bevi.World` -> passed through
+- `*bevi.MapN[T...]` -> component WRITE access on T...
+- `bevi.QueryN[T...]` -> READ access by default, WRITE access if you accept a pointer `*bevi.QueryN[...]` (write intent marker)
+- `*bevi.FilterN[T...]` -> no direct access (it is a builder used to produce queries)
+- `bevi.Resource[T]` -> READ access by default, WRITE access if you accept a pointer `*bevi.Resource[T]` (write intent marker)
 - `bevi.EventWriter[E]` -> event WRITE access for E
 - `bevi.EventReader[E]` -> event READ access for E
 
 The generator synthesizes helpers once per package (mappers, filters, resources, event readers/writers), wires everything in a single `Systems(app *bevi.App)` function. It does not auto-close queries; only call `Close()` yourself when you exit iteration early.
 
-### Query lifetime
-
-- Fully iterated queries must NOT be closed.
-- If you exit iteration early, you MUST call `Close()` before leaving the loop.
-- If you need to iterate multiple times (e.g., once per event), create a fresh query each time (prefer passing an `ecs.FilterN[...]` and doing `q := filter.Query()` per pass).
-
-Full iteration (no Close):
-```go
-func System(q ecs.Query2[A,B]) {
-    for q.Next() {
-        a, b := q.Get()
-        _ = a; _ = b
-    }
-    // do not call q.Close() here
-}
-```
-
-Early exit (must Close):
-```go
-func System(q *ecs.Query2[A,B]) {
-    for q.Next() {
-        a, b := q.Get()
-        if stop(a, b) {
-            q.Close() // required when exiting early
-            break
-        }
-    }
-}
-```
-
-Iterate per event (fresh query per pass):
-```go
-//bevi:system Update Writes={A}
-func Apply(reader bevi.EventReader[E], flt ecs.Filter1[A]) {
-    reader.ForEach(func(e E) bool {
-        q := flt.Query() // new cursor each time
-        for q.Next() {
-            a := q.Get()
-            // mutate a
-        }
-        // fully iterated -> no Close()
-        return true // continue to next event
-    })
-}
-```
 
 ### Filter DSL for queries and filters
 
-You can refine `ecs.FilterN` (and filters used to spawn queries) via extra doc lines:
+You can refine `bevi.FilterN` (and filters used to spawn queries) via extra doc lines:
 
 ```go
 //bevi:filter <paramName | Qk | Fk> [+Type | -Type | !exclusive | !register]...
@@ -183,7 +138,7 @@ Example:
 ```go
 //bevi:system Update
 //bevi:filter q +pkg.Position -pkg.Hidden !exclusive
-func Move(q *ecs.Query2[pkg.Position, pkg.Velocity]) { ... }
+func Move(q *bevi.Query2[pkg.Position, pkg.Velocity]) { ... }
 ```
 
 
@@ -209,7 +164,7 @@ Notes:
 
 ## Runtime: App and stages
 
-`bevi.App` orchestrates Ark’s `ecs.World`, the scheduler, and the event bus:
+`bevi.App` orchestrates Ark’s `bevi.World`, the scheduler, and the event bus:
 
 - Stages:
   - PreStartup, Startup, PostStartup (run once at boot)
@@ -235,7 +190,7 @@ meta := bevi.SystemMeta{
     After:  []string{"OtherSystem"},
     Every:  250 * time.Millisecond,
 }
-app.AddSystem(bevi.Update, "MySystem", meta, func(ctx context.Context, w *ecs.World) {
+app.AddSystem(bevi.Update, "MySystem", meta, func(ctx context.Context, w *bevi.World) {
     // ...
 })
 ```
@@ -319,7 +274,7 @@ See `./example/test`. It demonstrates:
 ## Tips and gotchas
 
 - Re-run the generator whenever you add/change `//bevi:system` or `//bevi:filter` lines or when parameter types change.
-- Pointer-marked queries (`*ecs.QueryN[...]`) are treated as WRITE access; non-pointer queries as READ.
+- Pointer-marked queries (`*bevi.QueryN[...]`) are treated as WRITE access; non-pointer queries as READ.
 - `Drain()/DrainTo()` don’t register readers; writers will be finalized by `CompleteNoReader()`. Prefer `ForEach()` for normal consumption.
 - If you register systems manually, ensure you correctly describe access in `SystemMeta.Access` to unlock safe parallelism.
 - If multiple packages contain systems, run the generator once; it will emit a `bevi_gen.go` per package. Call `AddSystems` for each package’s `Systems` function.
@@ -331,11 +286,11 @@ See `./example/test`. It demonstrates:
 Runtime
 - `type App struct`
   - `NewApp() *App`
-  - `(*App) AddSystem(stage Stage, name string, meta SystemMeta, fn func(context.Context, *ecs.World)) *App`
+  - `(*App) AddSystem(stage Stage, name string, meta SystemMeta, fn func(context.Context, *bevi.World)) *App`
   - `(*App) AddSystems(reg func(*App)) *App`
   - `(*App) SetDiagnostics(d Diagnostics) *App`
   - `(*App) Run()`
-  - `(*App) World() *ecs.World`
+  - `(*App) World() *bevi.World`
   - `(*App) Events() *EventBus`
 
 Scheduling

@@ -3,7 +3,7 @@ package main
 // Emitter that generates bevi_gen.go per package.
 // - Outputs Systems(app *bevi.App)
 // - Deduplicates helpers (mappers, filters, resources, event readers/writers)
-// - Honors pointer-marked queries (*ecs.QueryN[T]) as WRITE intent; non-pointer queries as READ intent
+// - Honors pointer-marked queries (*bevi.QueryN[T]) as WRITE intent; non-pointer queries as READ intent
 // - Applies explicit annotation overrides (Reads/Writes/ResReads/ResWrites)
 // - Adds event access (EventWriter/EventReader)
 // - Preserves original function parameter order
@@ -62,9 +62,8 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 
 	// Imports we may need based on observed params/metadata (path -> alias; empty alias means unaliased)
 	imports := map[string]string{
-		"github.com/oriumgames/bevi":   "",
-		"github.com/mlange-42/ark/ecs": "",
-		"context":                      "",
+		"github.com/oriumgames/bevi": "",
+		"context":                    "",
 	}
 	useTime := false
 
@@ -211,19 +210,19 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 		name := helperName(i, h)
 		switch h.kind {
 		case ParamECSMap:
-			// ecs.NewMapN[T...](app.World())
+			// bevi.NewMapN[T...](app)
 			gname, err := genericTypeList(h.typs)
 			if err != nil {
 				return nil, err
 			}
-			w("\t%s := ecs.NewMap%d[%s](app.World())\n", name, len(h.typs), gname)
+			w("\t%s := bevi.NewMap%d[%s](app)\n", name, len(h.typs), gname)
 		case ParamECSQuery, ParamECSFilter:
-			// ecs.NewFilterN[T...](app.World()) with chained options parsed from helper key
+			// bevi.NewFilterN[T...](app) with chained options parsed from helper key
 			gname, err := genericTypeList(h.typs)
 			if err != nil {
 				return nil, err
 			}
-			w("\t%s := ecs.NewFilter%d[%s](app.World())\n", name, len(h.typs), gname)
+			w("\t%s := bevi.NewFilter%d[%s](app)\n", name, len(h.typs), gname)
 			// Parse options from key: "...|with:a,b|without:c|exclusive|register"
 			{
 				parts := strings.Split(h.key, "|")
@@ -260,7 +259,7 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 						if i > 0 {
 							w(", ")
 						}
-						w("ecs.C[%s]()", t)
+						w("bevi.C[%s]()", t)
 					}
 					w(")\n")
 				}
@@ -270,7 +269,7 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 						if i > 0 {
 							w(", ")
 						}
-						w("ecs.C[%s]()", t)
+						w("bevi.C[%s]()", t)
 					}
 					w(")\n")
 				}
@@ -282,11 +281,11 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 				}
 			}
 		case ParamECSResource:
-			// ecs.NewResource[T](app.World())
+			// bevi.NewResource[T](app.World())
 			if len(h.typs) != 1 {
 				return nil, fmt.Errorf("resource expects 1 type param, got %v", h.typs)
 			}
-			w("\t%s := ecs.NewResource[%s](app.World())\n", name, h.typs[0])
+			w("\t%s := bevi.NewResource[%s](app.World())\n", name, h.typs[0])
 		case ParamEventWriter:
 			// bevi.WriterFor[T](app.Events())
 			if len(h.typs) != 1 {
@@ -310,8 +309,8 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 	// Emit AddSystem entries
 	for _, sys := range pkg.SysSpecs {
 		// Build AccessMeta inference with priority:
-		// - Default: Query -> READ; pointer-marked Query (*ecs.QueryN[T]) -> WRITE
-		//            Map -> WRITE; Resource -> ResREAD; pointer-marked Resource (*ecs.Resource[T]) -> ResWRITE
+		// - Default: Query -> READ; pointer-marked Query (*bevi.QueryN[T]) -> WRITE
+		//            Map -> WRITE; Resource -> ResREAD; pointer-marked Resource (*bevi.Resource[T]) -> ResWRITE
 		// - Event access from params
 		// - Explicit annotation overrides applied after defaults (Reads removes Write)
 		compRead := map[string]bool{}
@@ -411,8 +410,9 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 		}
 
 		// Wrapper: preserve original parameter order
-		w("\t\tapp.AddSystem(bevi.%s, %q, meta, func(ctx context.Context, w *ecs.World) {\n", sys.Stage, sys.SystemName)
+		w("\t\tapp.AddSystem(bevi.%s, %q, meta, func(ctx context.Context, w *bevi.World) {\n", sys.Stage, sys.SystemName)
 		var args []string
+		var closes []string
 		tmpIdx := 0
 		for _, p := range sys.Params {
 			switch p.Kind {
@@ -455,11 +455,13 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 					tmpIdx++
 					w("\t\t\t%s := %s.Query()\n", tmp, name)
 					args = append(args, "&"+tmp)
+					closes = append(closes, tmp)
 				} else {
 					tmp := fmt.Sprintf("_q%d", tmpIdx)
 					tmpIdx++
 					w("\t\t\t%s := %s.Query()\n", tmp, name)
 					args = append(args, tmp)
+					closes = append(closes, tmp)
 				}
 			case ParamECSFilter:
 				// Lookup helper for filter param and pass it directly
@@ -514,6 +516,9 @@ func emitPackage(ctx *Context, pkg *Package) ([]byte, error) {
 			}
 		}
 		w("\t\t\t%s(%s)\n", sys.FuncName, strings.Join(args, ", "))
+		for _, c := range closes {
+			w("\t\t\t%s.Close()\n", c)
+		}
 		w("\t\t})\n")
 		w("\t}\n\n")
 	}

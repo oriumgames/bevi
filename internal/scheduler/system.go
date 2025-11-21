@@ -90,7 +90,7 @@ func (a *AccessMeta) PrepareSets(ti *TypeIndex) {
 type System struct {
 	Name        string
 	Stage       Stage
-	Fn          any // func(context.Context, *ecs.World)
+	Fn          any // func(context.Context, *bevi.World)
 	Meta        SystemMeta
 	lastRunUnix atomic.Int64
 	LastRun     time.Time

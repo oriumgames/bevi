@@ -7,7 +7,6 @@ import (
 
 	"github.com/df-mc/dragonfly/server"
 	"github.com/go-gl/mathgl/mgl64"
-	"github.com/mlange-42/ark/ecs"
 	"github.com/oriumgames/bevi"
 )
 
@@ -30,8 +29,8 @@ func (p *Plugin) Build(app *bevi.App) {
 			Access: func() bevi.AccessMeta {
 				return bevi.NewAccess()
 			}(),
-		}, func(ctx context.Context, w *ecs.World) {
-			srv := newServer(p.cfg.New(), w, ecs.NewMap1[Player](w))
+		}, func(ctx context.Context, w *bevi.World) {
+			srv := newServer(p.cfg.New(), w, bevi.NewMap1[Player](app))
 			srv.CloseOnProgramEnd()
 			srv.Listen()
 
@@ -49,16 +48,16 @@ func (p *Plugin) Build(app *bevi.App) {
 			srv.Nether().Handle(h)
 			srv.End().Handle(h)
 
-			ecs.AddResource(w, srv)
+			bevi.AddResource(w, srv)
 		}).
 		AddSystems(Systems)
 }
 
 //bevi:system PreUpdate Set="dragonfly"
 func emitPlayerJoin(
-	w *ecs.World,
-	mapper *ecs.Map1[Player],
-	srv ecs.Resource[Server],
+	w *bevi.World,
+	mapper *bevi.Map1[Player],
+	srv bevi.Resource[Server],
 	r bevi.EventReader[playerCreate],
 	out bevi.EventWriter[PlayerJoin],
 ) {
@@ -83,11 +82,11 @@ func emitPlayerJoin(
 //
 //bevi:system PreUpdate Set="dragonfly"
 func publishPlayerQuit(
-	r bevi.EventReader[playerRemove],
-	out bevi.EventWriter[PlayerQuit],
+	reader bevi.EventReader[playerRemove],
+	writer bevi.EventWriter[PlayerQuit],
 ) {
-	r.ForEach(func(ev playerRemove) bool {
-		out.Emit(PlayerQuit{
+	reader.ForEach(func(ev playerRemove) bool {
+		writer.Emit(PlayerQuit{
 			Entity: ev.id,
 			wg:     ev.wg,
 		})
@@ -99,7 +98,7 @@ func publishPlayerQuit(
 //
 //bevi:system PostUpdate Set="dragonfly"
 func handlePlayerRemoval(
-	w *ecs.World,
+	w *bevi.World,
 	r bevi.EventReader[playerRemove],
 ) {
 	r.ForEach(func(ev playerRemove) bool {

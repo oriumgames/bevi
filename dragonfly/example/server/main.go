@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/df-mc/dragonfly/server"
-	"github.com/mlange-42/ark/ecs"
 	"github.com/oriumgames/bevi"
 	"github.com/oriumgames/bevi/dragonfly"
 )
@@ -27,7 +26,7 @@ func main() {
 
 //bevi:system Update
 func DenyBlockBreak(
-	srv ecs.Resource[dragonfly.Server],
+	srv bevi.Resource[dragonfly.Server],
 	r bevi.EventReader[dragonfly.PlayerBlockBreak],
 ) {
 	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerBlockBreak, p *dragonfly.Player) bool {
@@ -39,9 +38,9 @@ func DenyBlockBreak(
 
 //bevi:system Update Reads={dragonfly.Player}
 func WelcomeOnJoin(
-	srv ecs.Resource[dragonfly.Server],
+	srv bevi.Resource[dragonfly.Server],
 	r bevi.EventReader[dragonfly.PlayerJoin],
-	f *ecs.Filter1[dragonfly.Player],
+	f *bevi.Filter1[dragonfly.Player],
 ) {
 	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerJoin, p *dragonfly.Player) bool {
 		// Greet the joining player
@@ -62,9 +61,9 @@ func WelcomeOnJoin(
 
 //bevi:system Update Reads={dragonfly.Player}
 func FarewellOnQuit(
-	srv ecs.Resource[dragonfly.Server],
+	srv bevi.Resource[dragonfly.Server],
 	r bevi.EventReader[dragonfly.PlayerQuit],
-	f *ecs.Filter1[dragonfly.Player],
+	f *bevi.Filter1[dragonfly.Player],
 ) {
 	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerQuit, p *dragonfly.Player) bool {
 		// Announce to everyone else
@@ -82,9 +81,9 @@ func FarewellOnQuit(
 
 //bevi:system Update Reads={dragonfly.Player}
 func ChatFilterAndCount(
-	srv ecs.Resource[dragonfly.Server],
+	srv bevi.Resource[dragonfly.Server],
 	r bevi.EventReader[dragonfly.PlayerChat],
-	f *ecs.Filter1[dragonfly.Player],
+	f *bevi.Filter1[dragonfly.Player],
 ) {
 	const badWord = "badword" // trivial example; replace with your list or smarter checker
 
@@ -115,7 +114,7 @@ func ChatFilterAndCount(
 
 //bevi:system Update Every=10s
 func BroadcastPlayerCount(
-	q *ecs.Query1[dragonfly.Player],
+	q *bevi.Query1[dragonfly.Player],
 ) {
 	// count first
 	n := q.Count()

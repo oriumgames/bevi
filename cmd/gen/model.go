@@ -19,7 +19,7 @@ import (
 // Example mapping from annotation and signature:
 //
 //	//bevi:system Update After={"A"} Every=500ms Writes={Position} ResReads={Config}
-//	func Tick(ctx context.Context, q ecs.Query1[Position], cfg ecs.Resource[Config]) { ... }
+//	func Tick(ctx context.Context, q bevi.Query1[Position], cfg bevi.Resource[Config]) { ... }
 //
 // Fields:
 //   - Stage/Every/Set/After/Before: derived from annotation
@@ -108,7 +108,7 @@ func (k ParamKind) String() string {
 //   - TypeExpr: pretty-printed original type (for debugging)
 //   - ElemTypes: type arguments for generic forms (e.g., Query2[T1,T2] => [T1,T2])
 //   - HelperKey: deduplication key for prebuilt helpers (e.g., "query:T1,T2")
-//   - Pointer: true if parameter type is a pointer to the kind (e.g., *ecs.QueryN[T])
+//   - Pointer: true if parameter type is a pointer to the kind (e.g., *bevi.QueryN[T])
 //     This can be used to drive conventions like pointer-marked queries imply write.
 //   - FilterOpts: merged filter options for this parameter (from //bevi:filter)
 type Param struct {

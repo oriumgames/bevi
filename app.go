@@ -17,7 +17,7 @@ import (
 // event bus and the diagnostics adapter. All configuration methods return *App
 // to enable chaining before calling Run().
 type App struct {
-	world  *ecs.World
+	world  *World
 	sched  *scheduler.Scheduler
 	events *event.Bus
 	diag   *internalDiagnostics
@@ -62,14 +62,14 @@ func (a *App) AddPlugins(l []Plugin) *App {
 
 // AddSystem registers a single system function for the specified stage with
 // the provided scheduling metadata. The supplied fn must accept (context.Context,
-// *ecs.World). The meta.Access field is used to compute parallel batches and
+// *World). The meta.Access field is used to compute parallel batches and
 // dependency conflict checks.
-func (a *App) AddSystem(stage Stage, name string, meta SystemMeta, fn func(context.Context, *ecs.World)) *App {
+func (a *App) AddSystem(stage Stage, name string, meta SystemMeta, fn func(context.Context, *World)) *App {
 	sys := &scheduler.System{
 		Name:  name,
 		Stage: scheduler.Stage(stage),
 		Fn: func(ctx context.Context, w any) {
-			fn(ctx, w.(*ecs.World))
+			fn(ctx, w.(*World))
 		},
 		Meta: meta.toInternal(),
 	}
@@ -134,7 +134,7 @@ func (a *App) runStage(ctx context.Context, stage Stage) {
 	a.sched.RunStage(ctx, scheduler.Stage(stage), a.world)
 }
 
-func (a *App) World() *ecs.World {
+func (a *App) World() *World {
 	return a.world
 }
 

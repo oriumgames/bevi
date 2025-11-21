@@ -14,15 +14,14 @@ import (
 	"github.com/df-mc/dragonfly/server/session"
 	"github.com/df-mc/dragonfly/server/world"
 	"github.com/go-gl/mathgl/mgl64"
-	"github.com/mlange-42/ark/ecs"
 	"github.com/oriumgames/bevi"
 )
 
-// playerHandler bridges Dragonfly player events to the ECS.
+// playerHandler bridges Dragonfly player events to the ecs.
 type playerHandler struct {
 	ctx   context.Context
 	srv   *Server
-	world *ecs.World
+	world *bevi.World
 
 	move             bevi.EventWriter[PlayerMove]
 	jump             bevi.EventWriter[PlayerJump]

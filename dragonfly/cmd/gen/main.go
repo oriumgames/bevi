@@ -126,13 +126,13 @@ import (
 // These map 1:1 to github.com/df-mc/dragonfly/server/player.Handler methods.
 
 type PlayerEvent interface {
-	Player() ecs.Entity
+	Player() bevi.Entity
 }
 
 {{range .}}
 // Player{{.Name}} {{if .Cancellable}}is a cancellable event and {{end}}corresponds to Handle{{.Name}}({{.Context}}{{range .Params}}, {{.Name}} {{.Type}}{{end}}).
 type Player{{.Name}} struct {
-	Entity ecs.Entity
+	Entity bevi.Entity
 {{- range .Params}}
 	{{.Name | toExported}} {{.Type}}
 {{- end}}
@@ -141,14 +141,14 @@ type Player{{.Name}} struct {
 {{- end}}
 }
 
-func (p Player{{.Name}}) Player() ecs.Entity { return p.Entity }
+func (p Player{{.Name}}) Player() bevi.Entity { return p.Entity }
 {{end}}
 
 // PreQuit is special
 type PlayerPreQuit struct {
-	Entity ecs.Entity
+	Entity bevi.Entity
 }
-func (p PlayerPreQuit) Player() ecs.Entity { return p.Entity }
+func (p PlayerPreQuit) Player() bevi.Entity { return p.Entity }
 
 // strictly internal, not for external consumption
 type playerCreate struct {
@@ -156,7 +156,7 @@ type playerCreate struct {
 }
 
 type playerRemove struct {
-	id ecs.Entity
+	id bevi.Entity
 	wg *sync.WaitGroup
 }
 `
@@ -188,7 +188,7 @@ import (
 type playerHandler struct {
 	ctx    context.Context
 	srv    *Server
-	world  *ecs.World
+	world  *bevi.World
 
 {{range .}}
 	{{.Name | lowerFirst}} bevi.EventWriter[Player{{.Name}}]
@@ -322,7 +322,7 @@ import (
 // worldHandler bridges Dragonfly world events to the ECS and attaches player handlers.
 type worldHandler struct {
 	ctx   context.Context
-	world *ecs.World
+	world *bevi.World
 
 {{range .}}
 	{{.Name | lowerFirst}} bevi.EventWriter[World{{.Name}}]

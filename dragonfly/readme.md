@@ -82,7 +82,7 @@ func main() {
 
 //bevi:system Update
 func HelloOnJoin(
-	srv ecs.Resource[dragonfly.Server],
+	srv bevi.Resource[dragonfly.Server],
 	r bevi.EventReader[dragonfly.PlayerJoin],
 ) {
 	dragonfly.Receive(srv, r, func(ev dragonfly.PlayerJoin, p *dragonfly.Player) bool {
@@ -106,7 +106,7 @@ At a glance:
 - The Bevi Plugin boots Dragonfly in the PreStartup stage and wires two handlers:
   - A `worldHandler` that translates world callbacks into typed Bevi events and cancels Dragonfly when ECS cancels the event
   - A `playerHandler` doing the same for player callbacks; it also emits internal create/remove notifications
-- A PreUpdate system creates an ECS entity for each newly accepted player, maps it with `ecs.Map1[dragonfly.Player]`, and emits `PlayerJoin`; it also handles `PlayerQuit` by removing the entity
+- A PreUpdate system creates an ECS entity for each newly accepted player, maps it with `bevi.Map1[dragonfly.Player]`, and emits `PlayerJoin`; it also handles `PlayerQuit` by removing the entity
 - All user gameplay is modeled as Bevi systems:
   - You consume typed events via `bevi.EventReader[T]`
   - You can cancel them by calling `reader.Cancel()`
@@ -159,11 +159,11 @@ Resource:
 - The plugin registers an ECS resource of type `dragonfly.Server` that wraps Dragonfly’s `*server.Server` and tracks players
 
 Convenience methods:
-- `Player(ecs.Entity) (*dragonfly.Player, bool)`
+- `Player(bevi.Entity) (*dragonfly.Player, bool)`
 - `PlayerByUUID(uuid.UUID) (*dragonfly.Player, bool)`
 - `PlayerByName(string) (*dragonfly.Player, bool)`
 - `PlayerByXUID(string) (*dragonfly.Player, bool)`
 
 Player component:
-- `dragonfly.Player` wraps `*player.Player` and stores its `ecs.Entity`
-- You can fetch all players via `ecs.Query1[dragonfly.Player]` or `ecs.Filter1[dragonfly.Player]`
+- `dragonfly.Player` wraps `*player.Player` and stores its `bevi.Entity`
+- You can fetch all players via `bevi.Query1[dragonfly.Player]` or `bevi.Filter1[dragonfly.Player]`
