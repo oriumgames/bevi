@@ -50,7 +50,7 @@ Add Bevi and Bevi-DF:
 
 ```bash
 go get github.com/oriumgames/bevi@v0.1.7
-go get github.com/oriumgames/bevi/dragonfly@v0.2.1
+go get github.com/oriumgames/bevi/dragonfly@v0.2.2
 ```
 
 Create an app, add the Dragonfly plugin, and wire your systems:
