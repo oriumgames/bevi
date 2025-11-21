@@ -151,28 +151,12 @@ func NewMap12[A, B, C, D, E, F, G, H, I, J, K, L any](app *App) *Map12[A, B, C, 
 	return ecs.NewMap12[A, B, C, D, E, F, G, H, I, J, K, L](app.world)
 }
 
-type Filter0 struct {
-	*ecs.Filter0
-}
-
-func NewFilter0(app *App) *Filter0 {
-	return &Filter0{Filter0: ecs.NewFilter0(app.world)}
-}
-
-func (f *Filter0) Query(rel ...ecs.Relation) Query0 {
-	q := f.Filter0.Query(rel...)
-	c := false
-	return Query0{Query0: &q, closed: &c}
-}
-
 type Filter1[A any] struct {
 	*ecs.Filter1[A]
 }
 
 func NewFilter1[A any](app *App) *Filter1[A] {
-	return &Filter1[A]{
-		Filter1: ecs.NewFilter1[A](app.world),
-	}
+	return &Filter1[A]{Filter1: ecs.NewFilter1[A](app.world)}
 }
 
 func (f *Filter1[A]) Query(rel ...ecs.Relation) Query1[A] {
@@ -181,14 +165,22 @@ func (f *Filter1[A]) Query(rel ...ecs.Relation) Query1[A] {
 	return Query1[A]{Query1: &q, closed: &c}
 }
 
+func (f *Filter1[A]) With(comps ...Component) *Filter1[A] {
+	f.Filter1 = f.Filter1.With(comps...)
+	return f
+}
+
+func (f *Filter1[A]) Without(comps ...Component) *Filter1[A] {
+	f.Filter1 = f.Filter1.Without(comps...)
+	return f
+}
+
 type Filter2[A, B any] struct {
 	*ecs.Filter2[A, B]
 }
 
 func NewFilter2[A, B any](app *App) *Filter2[A, B] {
-	return &Filter2[A, B]{
-		Filter2: ecs.NewFilter2[A, B](app.world),
-	}
+	return &Filter2[A, B]{Filter2: ecs.NewFilter2[A, B](app.world)}
 }
 
 func (f *Filter2[A, B]) Query(rel ...ecs.Relation) Query2[A, B] {
@@ -197,14 +189,22 @@ func (f *Filter2[A, B]) Query(rel ...ecs.Relation) Query2[A, B] {
 	return Query2[A, B]{Query2: &q, closed: &c}
 }
 
+func (f *Filter2[A, B]) With(comps ...Component) *Filter2[A, B] {
+	f.Filter2 = f.Filter2.With(comps...)
+	return f
+}
+
+func (f *Filter2[A, B]) Without(comps ...Component) *Filter2[A, B] {
+	f.Filter2 = f.Filter2.Without(comps...)
+	return f
+}
+
 type Filter3[A, B, C any] struct {
 	*ecs.Filter3[A, B, C]
 }
 
 func NewFilter3[A, B, C any](app *App) *Filter3[A, B, C] {
-	return &Filter3[A, B, C]{
-		Filter3: ecs.NewFilter3[A, B, C](app.world),
-	}
+	return &Filter3[A, B, C]{Filter3: ecs.NewFilter3[A, B, C](app.world)}
 }
 
 func (f *Filter3[A, B, C]) Query(rel ...ecs.Relation) Query3[A, B, C] {
@@ -213,14 +213,22 @@ func (f *Filter3[A, B, C]) Query(rel ...ecs.Relation) Query3[A, B, C] {
 	return Query3[A, B, C]{Query3: &q, closed: &c}
 }
 
+func (f *Filter3[A, B, C]) With(comps ...Component) *Filter3[A, B, C] {
+	f.Filter3 = f.Filter3.With(comps...)
+	return f
+}
+
+func (f *Filter3[A, B, C]) Without(comps ...Component) *Filter3[A, B, C] {
+	f.Filter3 = f.Filter3.Without(comps...)
+	return f
+}
+
 type Filter4[A, B, C, D any] struct {
 	*ecs.Filter4[A, B, C, D]
 }
 
 func NewFilter4[A, B, C, D any](app *App) *Filter4[A, B, C, D] {
-	return &Filter4[A, B, C, D]{
-		Filter4: ecs.NewFilter4[A, B, C, D](app.world),
-	}
+	return &Filter4[A, B, C, D]{Filter4: ecs.NewFilter4[A, B, C, D](app.world)}
 }
 
 func (f *Filter4[A, B, C, D]) Query(rel ...ecs.Relation) Query4[A, B, C, D] {
@@ -229,14 +237,22 @@ func (f *Filter4[A, B, C, D]) Query(rel ...ecs.Relation) Query4[A, B, C, D] {
 	return Query4[A, B, C, D]{Query4: &q, closed: &c}
 }
 
+func (f *Filter4[A, B, C, D]) With(comps ...Component) *Filter4[A, B, C, D] {
+	f.Filter4 = f.Filter4.With(comps...)
+	return f
+}
+
+func (f *Filter4[A, B, C, D]) Without(comps ...Component) *Filter4[A, B, C, D] {
+	f.Filter4 = f.Filter4.Without(comps...)
+	return f
+}
+
 type Filter5[A, B, C, D, E any] struct {
 	*ecs.Filter5[A, B, C, D, E]
 }
 
 func NewFilter5[A, B, C, D, E any](app *App) *Filter5[A, B, C, D, E] {
-	return &Filter5[A, B, C, D, E]{
-		Filter5: ecs.NewFilter5[A, B, C, D, E](app.world),
-	}
+	return &Filter5[A, B, C, D, E]{Filter5: ecs.NewFilter5[A, B, C, D, E](app.world)}
 }
 
 func (f *Filter5[A, B, C, D, E]) Query(rel ...ecs.Relation) Query5[A, B, C, D, E] {
@@ -245,14 +261,22 @@ func (f *Filter5[A, B, C, D, E]) Query(rel ...ecs.Relation) Query5[A, B, C, D, E
 	return Query5[A, B, C, D, E]{Query5: &q, closed: &c}
 }
 
+func (f *Filter5[A, B, C, D, E]) With(comps ...Component) *Filter5[A, B, C, D, E] {
+	f.Filter5 = f.Filter5.With(comps...)
+	return f
+}
+
+func (f *Filter5[A, B, C, D, E]) Without(comps ...Component) *Filter5[A, B, C, D, E] {
+	f.Filter5 = f.Filter5.Without(comps...)
+	return f
+}
+
 type Filter6[A, B, C, D, E, F any] struct {
 	*ecs.Filter6[A, B, C, D, E, F]
 }
 
 func NewFilter6[A, B, C, D, E, F any](app *App) *Filter6[A, B, C, D, E, F] {
-	return &Filter6[A, B, C, D, E, F]{
-		Filter6: ecs.NewFilter6[A, B, C, D, E, F](app.world),
-	}
+	return &Filter6[A, B, C, D, E, F]{Filter6: ecs.NewFilter6[A, B, C, D, E, F](app.world)}
 }
 
 func (f *Filter6[A, B, C, D, E, F]) Query(rel ...ecs.Relation) Query6[A, B, C, D, E, F] {
@@ -261,14 +285,22 @@ func (f *Filter6[A, B, C, D, E, F]) Query(rel ...ecs.Relation) Query6[A, B, C, D
 	return Query6[A, B, C, D, E, F]{Query6: &q, closed: &c}
 }
 
+func (f *Filter6[A, B, C, D, E, F]) With(comps ...Component) *Filter6[A, B, C, D, E, F] {
+	f.Filter6 = f.Filter6.With(comps...)
+	return f
+}
+
+func (f *Filter6[A, B, C, D, E, F]) Without(comps ...Component) *Filter6[A, B, C, D, E, F] {
+	f.Filter6 = f.Filter6.Without(comps...)
+	return f
+}
+
 type Filter7[A, B, C, D, E, F, G any] struct {
 	*ecs.Filter7[A, B, C, D, E, F, G]
 }
 
 func NewFilter7[A, B, C, D, E, F, G any](app *App) *Filter7[A, B, C, D, E, F, G] {
-	return &Filter7[A, B, C, D, E, F, G]{
-		Filter7: ecs.NewFilter7[A, B, C, D, E, F, G](app.world),
-	}
+	return &Filter7[A, B, C, D, E, F, G]{Filter7: ecs.NewFilter7[A, B, C, D, E, F, G](app.world)}
 }
 
 func (f *Filter7[A, B, C, D, E, F, G]) Query(rel ...ecs.Relation) Query7[A, B, C, D, E, F, G] {
@@ -277,20 +309,38 @@ func (f *Filter7[A, B, C, D, E, F, G]) Query(rel ...ecs.Relation) Query7[A, B, C
 	return Query7[A, B, C, D, E, F, G]{Query7: &q, closed: &c}
 }
 
+func (f *Filter7[A, B, C, D, E, F, G]) With(comps ...Component) *Filter7[A, B, C, D, E, F, G] {
+	f.Filter7 = f.Filter7.With(comps...)
+	return f
+}
+
+func (f *Filter7[A, B, C, D, E, F, G]) Without(comps ...Component) *Filter7[A, B, C, D, E, F, G] {
+	f.Filter7 = f.Filter7.Without(comps...)
+	return f
+}
+
 type Filter8[A, B, C, D, E, F, G, H any] struct {
 	*ecs.Filter8[A, B, C, D, E, F, G, H]
 }
 
 func NewFilter8[A, B, C, D, E, F, G, H any](app *App) *Filter8[A, B, C, D, E, F, G, H] {
-	return &Filter8[A, B, C, D, E, F, G, H]{
-		Filter8: ecs.NewFilter8[A, B, C, D, E, F, G, H](app.world),
-	}
+	return &Filter8[A, B, C, D, E, F, G, H]{Filter8: ecs.NewFilter8[A, B, C, D, E, F, G, H](app.world)}
 }
 
 func (f *Filter8[A, B, C, D, E, F, G, H]) Query(rel ...ecs.Relation) Query8[A, B, C, D, E, F, G, H] {
 	q := f.Filter8.Query(rel...)
 	c := false
 	return Query8[A, B, C, D, E, F, G, H]{Query8: &q, closed: &c}
+}
+
+func (f *Filter8[A, B, C, D, E, F, G, H]) With(comps ...Component) *Filter8[A, B, C, D, E, F, G, H] {
+	f.Filter8 = f.Filter8.With(comps...)
+	return f
+}
+
+func (f *Filter8[A, B, C, D, E, F, G, H]) Without(comps ...Component) *Filter8[A, B, C, D, E, F, G, H] {
+	f.Filter8 = f.Filter8.Without(comps...)
+	return f
 }
 
 type Query0 struct {
