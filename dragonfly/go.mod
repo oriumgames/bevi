@@ -28,5 +28,3 @@ require (
 	golang.org/x/oauth2 v0.25.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 )
-
-replace github.com/oriumgames/bevi => ../
