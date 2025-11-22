@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -112,7 +113,7 @@ func (s *Scheduler) Build() error {
 	for stage := range s.systems {
 		stages = append(stages, stage)
 	}
-	sort.Slice(stages, func(i, j int) bool { return stages[i] < stages[j] })
+	slices.Sort(stages)
 
 	for _, stage := range stages {
 		systems := s.systems[stage]
