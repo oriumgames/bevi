@@ -3,6 +3,7 @@ package dragonfly
 import (
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -112,7 +113,7 @@ func (p PlayerHurt) PlayerRef() *Player { return p.Player }
 type PlayerDeath struct {
 	Player  *Player
 	Src     world.DamageSource
-	KeepInv *bool
+	KeepInv *atomic.Bool
 }
 
 func (p PlayerDeath) PlayerRef() *Player { return p.Player }

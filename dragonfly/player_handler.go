@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -22,6 +23,8 @@ type playerHandler struct {
 	ctx   context.Context
 	srv   *Server
 	world *bevi.World
+
+	keepInv atomic.Bool
 
 	move             bevi.EventWriter[PlayerMove]
 	jump             bevi.EventWriter[PlayerJump]
@@ -127,7 +130,7 @@ func (h *playerHandler) HandleMove(ctx *player.Context, newPos mgl64.Vec3, newRo
 		Player: dp,
 		NewPos: newPos,
 		NewRot: newRot,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -150,7 +153,7 @@ func (h *playerHandler) HandleTeleport(ctx *player.Context, pos mgl64.Vec3) {
 	if h.teleport.EmitResult(PlayerTeleport{
 		Player: dp,
 		Pos:    pos,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -175,7 +178,7 @@ func (h *playerHandler) HandleToggleSprint(ctx *player.Context, after bool) {
 	if h.toggleSprint.EmitResult(PlayerToggleSprint{
 		Player: dp,
 		After:  after,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -188,7 +191,7 @@ func (h *playerHandler) HandleToggleSneak(ctx *player.Context, after bool) {
 	if h.toggleSneak.EmitResult(PlayerToggleSneak{
 		Player: dp,
 		After:  after,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -201,7 +204,7 @@ func (h *playerHandler) HandleChat(ctx *player.Context, message *string) {
 	if h.chat.EmitResult(PlayerChat{
 		Player:  dp,
 		Message: message,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -215,7 +218,7 @@ func (h *playerHandler) HandleFoodLoss(ctx *player.Context, from int, to *int) {
 		Player: dp,
 		From:   from,
 		To:     to,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -229,37 +232,46 @@ func (h *playerHandler) HandleHeal(ctx *player.Context, health *float64, src wor
 		Player: dp,
 		Health: health,
 		Src:    src,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
 func (h *playerHandler) HandleHurt(ctx *player.Context, damage *float64, immune bool, attackImmunity *time.Duration, src world.DamageSource) {
+	// Custom Hurt override
 	dp, ok := h.srv.PlayerByUUID(ctx.Val().UUID())
 	if !ok {
 		return
 	}
+
+	// Fire Hurt event
 	if h.hurt.EmitResult(PlayerHurt{
 		Player:         dp,
 		Damage:         damage,
 		Immune:         immune,
 		AttackImmunity: attackImmunity,
 		Src:            src,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
+		ctx.Cancel()
+	}
+
+	// Custom death trigger
+	if (ctx.Val().Health() - *damage) > 0 {
+		return
+	}
+
+	if h.death.EmitResult(PlayerDeath{
+		Player:  dp,
+		Src:     src,
+		KeepInv: &h.keepInv,
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
 
 func (h *playerHandler) HandleDeath(p *player.Player, src world.DamageSource, keepInv *bool) {
-	dp, ok := h.srv.PlayerByUUID(p.UUID())
-	if !ok {
-		return
-	}
-	h.death.Emit(PlayerDeath{
-		Player:  dp,
-		Src:     src,
-		KeepInv: keepInv,
-	})
+	// Custom Death override
+	*keepInv = h.keepInv.Load()
 }
 
 func (h *playerHandler) HandleRespawn(p *player.Player, pos *mgl64.Vec3, w **world.World) {
@@ -282,7 +294,7 @@ func (h *playerHandler) HandleSkinChange(ctx *player.Context, skin *skin.Skin) {
 	if h.skinChange.EmitResult(PlayerSkinChange{
 		Player: dp,
 		Skin:   skin,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -295,7 +307,7 @@ func (h *playerHandler) HandleFireExtinguish(ctx *player.Context, pos cube.Pos) 
 	if h.fireExtinguish.EmitResult(PlayerFireExtinguish{
 		Player: dp,
 		Pos:    pos,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -308,7 +320,7 @@ func (h *playerHandler) HandleStartBreak(ctx *player.Context, pos cube.Pos) {
 	if h.startBreak.EmitResult(PlayerStartBreak{
 		Player: dp,
 		Pos:    pos,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -323,7 +335,7 @@ func (h *playerHandler) HandleBlockBreak(ctx *player.Context, pos cube.Pos, drop
 		Pos:    pos,
 		Drops:  drops,
 		Xp:     xp,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -337,7 +349,7 @@ func (h *playerHandler) HandleBlockPlace(ctx *player.Context, pos cube.Pos, bloc
 		Player: dp,
 		Pos:    pos,
 		Block:  block,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -351,7 +363,7 @@ func (h *playerHandler) HandleBlockPick(ctx *player.Context, pos cube.Pos, block
 		Player: dp,
 		Pos:    pos,
 		Block:  block,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -363,7 +375,7 @@ func (h *playerHandler) HandleItemUse(ctx *player.Context) {
 	}
 	if h.itemUse.EmitResult(PlayerItemUse{
 		Player: dp,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -378,7 +390,7 @@ func (h *playerHandler) HandleItemUseOnBlock(ctx *player.Context, pos cube.Pos, 
 		Pos:      pos,
 		Face:     face,
 		ClickPos: clickPos,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -391,7 +403,7 @@ func (h *playerHandler) HandleItemUseOnEntity(ctx *player.Context, target world.
 	if h.itemUseOnEntity.EmitResult(PlayerItemUseOnEntity{
 		Player: dp,
 		Target: target,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -405,7 +417,7 @@ func (h *playerHandler) HandleItemRelease(ctx *player.Context, item item.Stack, 
 		Player: dp,
 		Item:   item,
 		Dur:    dur,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -418,7 +430,7 @@ func (h *playerHandler) HandleItemConsume(ctx *player.Context, item item.Stack) 
 	if h.itemConsume.EmitResult(PlayerItemConsume{
 		Player: dp,
 		Item:   item,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -434,7 +446,7 @@ func (h *playerHandler) HandleAttackEntity(ctx *player.Context, target world.Ent
 		Force:    force,
 		Height:   height,
 		Critical: critical,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -447,7 +459,7 @@ func (h *playerHandler) HandleExperienceGain(ctx *player.Context, amount *int) {
 	if h.experienceGain.EmitResult(PlayerExperienceGain{
 		Player: dp,
 		Amount: amount,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -459,7 +471,7 @@ func (h *playerHandler) HandlePunchAir(ctx *player.Context) {
 	}
 	if h.punchAir.EmitResult(PlayerPunchAir{
 		Player: dp,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -475,7 +487,7 @@ func (h *playerHandler) HandleSignEdit(ctx *player.Context, pos cube.Pos, frontS
 		FrontSide: frontSide,
 		OldText:   oldText,
 		NewText:   newText,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -490,7 +502,7 @@ func (h *playerHandler) HandleLecternPageTurn(ctx *player.Context, pos cube.Pos,
 		Pos:     pos,
 		OldPage: oldPage,
 		NewPage: newPage,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -504,7 +516,7 @@ func (h *playerHandler) HandleItemDamage(ctx *player.Context, item item.Stack, d
 		Player: dp,
 		Item:   item,
 		Damage: damage,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -517,7 +529,7 @@ func (h *playerHandler) HandleItemPickup(ctx *player.Context, item *item.Stack) 
 	if h.itemPickup.EmitResult(PlayerItemPickup{
 		Player: dp,
 		Item:   item,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -531,7 +543,7 @@ func (h *playerHandler) HandleHeldSlotChange(ctx *player.Context, from int, to i
 		Player: dp,
 		From:   from,
 		To:     to,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -544,7 +556,7 @@ func (h *playerHandler) HandleItemDrop(ctx *player.Context, item item.Stack) {
 	if h.itemDrop.EmitResult(PlayerItemDrop{
 		Player: dp,
 		Item:   item,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -557,7 +569,7 @@ func (h *playerHandler) HandleTransfer(ctx *player.Context, addr *net.UDPAddr) {
 	if h.transfer.EmitResult(PlayerTransfer{
 		Player: dp,
 		Addr:   addr,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -571,7 +583,7 @@ func (h *playerHandler) HandleCommandExecution(ctx *player.Context, command cmd.
 		Player:  dp,
 		Command: command,
 		Args:    args,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }

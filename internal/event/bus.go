@@ -42,17 +42,6 @@ func (b *Bus) Advance() {
 	})
 }
 
-// CompleteNoReader closes completion signals for events with no pending readers.
-// Call once after a frame's systems have run and before Advance().
-func (b *Bus) CompleteNoReader() {
-	b.stores.Range(func(_, v any) bool {
-		if cmp, ok := v.(completer); ok {
-			cmp.completeNoReader()
-		}
-		return true
-	})
-}
-
 // WriterFor returns a type-safe writer bound to this bus.
 func WriterFor[T any](b *Bus) Writer[T] {
 	return Writer[T]{store: ensureStore[T](b)}
@@ -66,7 +55,6 @@ func ReaderFor[T any](b *Bus) Reader[T] {
 // advancer and completer are implemented by the per-type store to support
 // frame advancement and completion handling.
 type advancer interface{ advance() }
-type completer interface{ completeNoReader() }
 type diagnoser interface{ setDiagnostics(Diagnostics) }
 
 func (s *store[T]) setDiagnostics(d Diagnostics) {

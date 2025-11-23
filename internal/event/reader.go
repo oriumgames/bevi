@@ -65,17 +65,17 @@ func (r *Reader[T]) ForEach(yield func(T) bool) {
 		// Only yield if the entry is not done; otherwise, just clean it up.
 		if !ent.IsDone() {
 			if !yield(ent.val) {
-				ent.decAndMaybeClose()
+				ent.dec()
 				// If we stopped early, we still need to decrement the pending count
 				// for all the remaining entries we registered but didn't process.
 				// The current entry `ent` has already been decremented.
 				for j := i + 1; j < len(entries); j++ {
-					entries[j].decAndMaybeClose()
+					entries[j].dec()
 				}
 				break
 			}
 		}
-		ent.decAndMaybeClose()
+		ent.dec()
 	}
 	r.cur = nil
 }

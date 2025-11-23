@@ -109,6 +109,7 @@ func genPlayerEvents(path string) error {
 import (
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/df-mc/dragonfly/server/block/cube"
@@ -128,19 +129,23 @@ type PlayerEvent interface {
 	PlayerRef() *Player
 }
 
-{{range .}}
-// Player{{.Name}} {{if .Cancellable}}is a cancellable event and {{end}}corresponds to Handle{{.Name}}({{.Context}}{{range .Params}}, {{.Name}} {{.Type}}{{end}}).
-type Player{{.Name}} struct {
-	Player *Player
-{{- range .Params}}
-	{{.Name | toExported}} {{.Type}}
+{{range $ev := .}}
+// Player{{$ev.Name}} {{if $ev.Cancellable}}is a cancellable event and {{end}}corresponds to Handle{{$ev.Name}}({{$ev.Context}}{{range $ev.Params}}, {{.Name}} {{.Type}}{{end}}).
+type Player{{$ev.Name}} struct {
+    Player *Player
+{{- range $p := $ev.Params}}
+    {{- if and (eq $ev.Name "Death") (eq $p.Name "keepInv")}}
+    KeepInv *atomic.Bool
+    {{- else}}
+    {{$p.Name | toExported}} {{$p.Type}}
+    {{- end}}
 {{- end}}
-{{- if eq .Name "Quit"}}
-	wg *sync.WaitGroup
+{{- if eq $ev.Name "Quit"}}
+    wg *sync.WaitGroup
 {{- end}}
 }
 
-func (p Player{{.Name}}) PlayerRef() *Player { return p.Player }
+func (p Player{{$ev.Name}}) PlayerRef() *Player { return p.Player }
 {{end}}
 
 // PreQuit is special
@@ -167,106 +172,147 @@ func genPlayerHandler(path string) error {
 	tmpl := `package dragonfly
 
 import (
-	"context"
-	"net"
-	"sync"
-	"time"
+    "context"
+    "net"
+    "sync"
+    "sync/atomic"
+    "time"
 
-	"github.com/df-mc/dragonfly/server/block/cube"
-	"github.com/df-mc/dragonfly/server/cmd"
-	"github.com/df-mc/dragonfly/server/item"
-	"github.com/df-mc/dragonfly/server/player"
-	"github.com/df-mc/dragonfly/server/player/skin"
-	"github.com/df-mc/dragonfly/server/session"
-	"github.com/df-mc/dragonfly/server/world"
-	"github.com/go-gl/mathgl/mgl64"
-	"github.com/oriumgames/bevi"
+    "github.com/df-mc/dragonfly/server/block/cube"
+    "github.com/df-mc/dragonfly/server/cmd"
+    "github.com/df-mc/dragonfly/server/item"
+    "github.com/df-mc/dragonfly/server/player"
+    "github.com/df-mc/dragonfly/server/player/skin"
+    "github.com/df-mc/dragonfly/server/session"
+    "github.com/df-mc/dragonfly/server/world"
+    "github.com/go-gl/mathgl/mgl64"
+    "github.com/oriumgames/bevi"
 )
 
 // playerHandler bridges Dragonfly player events to the ECS.
 type playerHandler struct {
-	ctx    context.Context
-	srv    *Server
-	world  *bevi.World
+    ctx    context.Context
+    srv    *Server
+    world  *bevi.World
+
+    keepInv atomic.Bool
 
 {{range .}}
-	{{.Name | lowerFirst}} bevi.EventWriter[Player{{.Name}}]
+    {{.Name | lowerFirst}} bevi.EventWriter[Player{{.Name}}]
 {{- end}}
-	preQuit bevi.EventWriter[PlayerPreQuit]
+    preQuit bevi.EventWriter[PlayerPreQuit]
 
-	// internal
-	create bevi.EventWriter[playerCreate]
-	remove bevi.EventWriter[playerRemove]
+    // internal
+    create bevi.EventWriter[playerCreate]
+    remove bevi.EventWriter[playerRemove]
 }
 
 func newPlayerHandler(ctx context.Context, app *bevi.App, srv *Server) *playerHandler {
-	return &playerHandler{
-		ctx:    ctx,
-		srv:    srv,
-		world:  app.World(),
+    return &playerHandler{
+        ctx:    ctx,
+        srv:    srv,
+        world:  app.World(),
 
 {{range .}}
-		{{.Name | lowerFirst}}: bevi.WriterFor[Player{{.Name}}](app.Events()),
+        {{.Name | lowerFirst}}: bevi.WriterFor[Player{{.Name}}](app.Events()),
 {{- end}}
-		preQuit: bevi.WriterFor[PlayerPreQuit](app.Events()),
+        preQuit: bevi.WriterFor[PlayerPreQuit](app.Events()),
 
-		// internal
-		create: bevi.WriterFor[playerCreate](app.Events()),
-		remove: bevi.WriterFor[playerRemove](app.Events()),
-	}
+        // internal
+        create: bevi.WriterFor[playerCreate](app.Events()),
+        remove: bevi.WriterFor[playerRemove](app.Events()),
+    }
 }
 
 {{range .}}
 func (h *playerHandler) Handle{{.Name}}({{.Context}}{{range .Params}}, {{.Name}} {{.Type}}{{end}}) {
-{{- if eq .Name "Join"}}
-	h.create.Emit(playerCreate{
-		p: p,
-	})
+
+{{- if eq .Name "Hurt"}}
+    // Custom Hurt override
+    dp, ok := h.srv.PlayerByUUID(ctx.Val().UUID())
+    if !ok {
+        return
+    }
+
+    // Fire Hurt event
+    if h.hurt.EmitResult(PlayerHurt{
+        Player:         dp,
+        Damage:         damage,
+        Immune:         immune,
+        AttackImmunity: attackImmunity,
+        Src:            src,
+    }).Wait(h.ctx) {
+        ctx.Cancel()
+    }
+
+    // Custom death trigger
+    if (ctx.Val().Health() - *damage) > 0 {
+        return
+    }
+
+    if h.death.EmitResult(PlayerDeath{
+        Player:  dp,
+        Src:     src,
+        KeepInv: &h.keepInv,
+    }).Wait(h.ctx) {
+        ctx.Cancel()
+    }
+
+{{- else if eq .Name "Death"}}
+    // Custom Death override
+    *keepInv = h.keepInv.Load()
+
+{{- else if eq .Name "Join"}}
+    h.create.Emit(playerCreate{
+        p: p,
+    })
+
 {{- else if eq .Name "Quit"}}
-	dp, ok := h.srv.PlayerByUUID(p.UUID())
-	if !ok {
-		return
-	}
+    dp, ok := h.srv.PlayerByUUID(p.UUID())
+    if !ok {
+        return
+    }
 
-	h.preQuit.Emit(PlayerPreQuit{
-		Player: dp,
-	})
+    h.preQuit.Emit(PlayerPreQuit{
+        Player: dp,
+    })
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+    var wg sync.WaitGroup
+    wg.Add(1)
 
-	h.remove.Emit(playerRemove{
-		dp: dp,
-		wg: &wg,
-	})
+    h.remove.Emit(playerRemove{
+        dp: dp,
+        wg: &wg,
+    })
 
-	wg.Wait()
+    wg.Wait()
+
 {{- else}}
-	{{- if hasPrefix .Context "p *player.Player"}}
-	dp, ok := h.srv.PlayerByUUID(p.UUID())
-	{{- else}}
-	dp, ok := h.srv.PlayerByUUID(ctx.Val().UUID())
-	{{- end}}
-	if !ok {
-		return
-	}
-	{{- if .Cancellable}}
-	if h.{{.Name | lowerFirst}}.EmitResult(Player{{.Name}}{
-		Player: dp,
-	{{- range .Params}}
-		{{.Name | toExported}}: {{.Name}},
-	{{- end}}
-	}).WaitCancelled(h.ctx) {
-		ctx.Cancel()
-	}
-	{{- else}}
-	h.{{.Name | lowerFirst}}.Emit(Player{{.Name}}{
-		Player: dp,
-	{{- range .Params}}
-		{{.Name | toExported}}: {{.Name}},
-	{{- end}}
-	})
-	{{- end}}
+    {{- if hasPrefix .Context "p *player.Player"}}
+    dp, ok := h.srv.PlayerByUUID(p.UUID())
+    {{- else}}
+    dp, ok := h.srv.PlayerByUUID(ctx.Val().UUID())
+    {{- end}}
+    if !ok {
+        return
+    }
+    {{- if .Cancellable}}
+    if h.{{.Name | lowerFirst}}.EmitResult(Player{{.Name}}{
+        Player: dp,
+    {{- range .Params}}
+        {{.Name | toExported}}: {{.Name}},
+    {{- end}}
+    }).Wait(h.ctx) {
+        ctx.Cancel()
+    }
+    {{- else}}
+    h.{{.Name | lowerFirst}}.Emit(Player{{.Name}}{
+        Player: dp,
+    {{- range .Params}}
+        {{.Name | toExported}}: {{.Name}},
+    {{- end}}
+    })
+    {{- end}}
 {{- end}}
 }
 {{end}}
@@ -345,7 +391,7 @@ func (h *worldHandler) Handle{{.Name}}({{.Context}}{{range .Params}}, {{.Name}} 
 	{{- range .Params}}
 		{{.Name | toExported}}: {{.Name}},
 	{{- end}}
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 	{{- else}}

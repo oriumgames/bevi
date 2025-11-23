@@ -62,7 +62,7 @@ func TestEmitIterOrderAndAdvance(t *testing.T) {
 	}
 }
 
-func TestCancelAndWaitCancelledFast(t *testing.T) {
+func TestCancelAndWaitFast(t *testing.T) {
 	b := event.NewBus()
 	w := event.WriterFor[cancelEvent](b)
 	r := event.ReaderFor[cancelEvent](b)
@@ -81,7 +81,7 @@ func TestCancelAndWaitCancelledFast(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		begin := time.Now()
-		wasCancelled = res.WaitCancelled(ctx)
+		wasCancelled = res.Wait(ctx)
 		took = time.Since(begin)
 	}()
 
@@ -100,14 +100,14 @@ func TestCancelAndWaitCancelledFast(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatalf("WaitCancelled did not return in time")
+		t.Fatalf("Wait did not return in time")
 	}
 
 	if !wasCancelled {
-		t.Fatalf("expected WaitCancelled to observe cancellation, got false")
+		t.Fatalf("expected Wait to observe cancellation, got false")
 	}
 	if took > 50*time.Millisecond {
-		t.Fatalf("WaitCancelled took too long: %v (should be fast)", took)
+		t.Fatalf("Wait took too long: %v (should be fast)", took)
 	}
 
 	// After reader finished, Wait should return quickly as well with cancellation=true.
@@ -118,15 +118,15 @@ func TestCancelAndWaitCancelledFast(t *testing.T) {
 	}
 }
 
-func TestCompleteNoReader(t *testing.T) {
+func TestAdvance(t *testing.T) {
 	b := event.NewBus()
 	w := event.WriterFor[string](b)
 
 	res := w.EmitResult("foo")
 	b.Advance()
 
-	// No reader called ForEach() this frame. CompleteNoReader should complete the event.
-	b.CompleteNoReader()
+	// No reader called ForEach() this frame. Advance should complete the event.
+	b.Advance()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -136,7 +136,7 @@ func TestCompleteNoReader(t *testing.T) {
 	}
 }
 
-func TestDrainRequiresCompleteNoReader(t *testing.T) {
+func TestDrainRequiresAdvance(t *testing.T) {
 	b := event.NewBus()
 	w := event.WriterFor[int](b)
 	r := event.ReaderFor[int](b)
@@ -149,7 +149,7 @@ func TestDrainRequiresCompleteNoReader(t *testing.T) {
 		t.Fatalf("Drain returned %v, want [10]", vals)
 	}
 
-	// Waiting before CompleteNoReader should block. Verify it doesn't complete early.
+	// Waiting before Advance should block. Verify it doesn't complete early.
 	waitDone := make(chan struct{})
 	go func() {
 		defer close(waitDone)
@@ -158,22 +158,22 @@ func TestDrainRequiresCompleteNoReader(t *testing.T) {
 
 	select {
 	case <-waitDone:
-		t.Fatalf("Wait completed before CompleteNoReader; expected to block")
+		t.Fatalf("Wait completed before Advance; expected to block")
 	case <-time.After(20 * time.Millisecond):
 		// good, still waiting
 	}
 
 	// Now complete and ensure the waiter finishes.
-	b.CompleteNoReader()
+	b.Advance()
 	select {
 	case <-waitDone:
 	case <-time.After(time.Second):
-		t.Fatalf("Wait didn't complete after CompleteNoReader")
+		t.Fatalf("Wait didn't complete after Advance")
 	}
 
 	// Not cancelled.
 	if res.Cancelled() {
-		t.Fatalf("unexpected cancellation after CompleteNoReader")
+		t.Fatalf("unexpected cancellation after Advance")
 	}
 }
 
@@ -216,19 +216,19 @@ func TestLazyDoneImmediateAfterComplete(t *testing.T) {
 	res := w.EmitResult(42)
 	b.Advance()
 	// No readers -> mark complete this frame.
-	b.CompleteNoReader()
+	b.Advance()
 
-	// WaitCancelled should return immediately (not cancelled).
+	// Wait should return immediately (not cancelled).
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	begin := time.Now()
-	c := res.WaitCancelled(ctx)
+	c := res.Wait(ctx)
 	elapsed := time.Since(begin)
 	if c {
 		t.Fatalf("unexpected cancellation")
 	}
 	if elapsed > 10*time.Millisecond {
-		t.Fatalf("WaitCancelled took too long after completion: %v", elapsed)
+		t.Fatalf("Wait took too long after completion: %v", elapsed)
 	}
 
 	// Wait should be immediate as well.
@@ -324,7 +324,7 @@ func TestStressPoolingNoWait(t *testing.T) {
 		}
 		b.Advance()
 		_ = r.Drain()
-		b.CompleteNoReader()
+		b.Advance()
 	}
 
 	// Stress pass: many frames and events without waiting; just ensure correctness and no deadlocks.
@@ -342,7 +342,7 @@ func TestStressPoolingNoWait(t *testing.T) {
 			t.Fatalf("frame %d: got %d events, want %d", f, len(col), perFrame)
 		}
 		total += len(col)
-		b.CompleteNoReader()
+		b.Advance()
 	}
 	if total != frames*perFrame {
 		t.Fatalf("total events mismatch: %d vs %d", total, frames*perFrame)
@@ -372,25 +372,25 @@ func TestEmitAndWaitConvenience(t *testing.T) {
 	}
 }
 
-func TestWaitCancelledTimeoutWhenNoReaders(t *testing.T) {
+func TestWaitTimeoutWhenNoReaders(t *testing.T) {
 	b := event.NewBus()
 	w := event.WriterFor[int](b)
 
 	res := w.EmitResult(1)
 	b.Advance()
 
-	// No readers; WaitCancelled should return false after context timeout.
+	// No readers; Wait should return false after context timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 	begin := time.Now()
-	c := res.WaitCancelled(ctx)
+	c := res.Wait(ctx)
 	dur := time.Since(begin)
 	if c {
 		t.Fatalf("unexpected cancellation when no readers")
 	}
 	// It should roughly honor context timeouts (we allow a wide margin).
 	if dur < 5*time.Millisecond || dur > 500*time.Millisecond {
-		t.Fatalf("WaitCancelled duration unexpected: %v", dur)
+		t.Fatalf("Wait duration unexpected: %v", dur)
 	}
 }
 
@@ -413,8 +413,8 @@ func TestReaderEarlyStopDecrementsPending(t *testing.T) {
 		return true
 	})
 
-	// No more readers this frame -> CompleteNoReader should complete both events.
-	b.CompleteNoReader()
+	// No more readers this frame -> Advance should complete both events.
+	b.Advance()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -464,7 +464,7 @@ func TestConcurrentReadersAndWriters(t *testing.T) {
 			total++
 			return true
 		})
-		b.CompleteNoReader()
+		b.Advance()
 		if total >= writers*perWriter {
 			break
 		}
@@ -478,7 +478,7 @@ func TestConcurrentReadersAndWriters(t *testing.T) {
 			total++
 			return true
 		})
-		b.CompleteNoReader()
+		b.Advance()
 	}
 
 	if total == 0 || len(seen) == 0 {
@@ -503,7 +503,7 @@ func TestEventResultValidAndCancelledAccessors(t *testing.T) {
 		t.Fatalf("cancelled should be false before any reader runs")
 	}
 	b.Advance()
-	b.CompleteNoReader()
+	b.Advance()
 	if res.Cancelled() {
 		t.Fatalf("cancelled should be false after completion with no readers")
 	}

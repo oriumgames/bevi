@@ -54,7 +54,7 @@ func (h *worldHandler) HandleLiquidFlow(ctx *world.Context, from cube.Pos, into 
 		Into:     into,
 		Liquid:   liquid,
 		Replaced: replaced,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -64,7 +64,7 @@ func (h *worldHandler) HandleLiquidDecay(ctx *world.Context, pos cube.Pos, befor
 		Pos:    pos,
 		Before: before,
 		After:  after,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -75,7 +75,7 @@ func (h *worldHandler) HandleLiquidHarden(ctx *world.Context, hardenedPos cube.P
 		LiquidHardened: liquidHardened,
 		OtherLiquid:    otherLiquid,
 		NewBlock:       newBlock,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -84,7 +84,7 @@ func (h *worldHandler) HandleSound(ctx *world.Context, s world.Sound, pos mgl64.
 	if h.sound.EmitResult(WorldSound{
 		S:   s,
 		Pos: pos,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -93,7 +93,7 @@ func (h *worldHandler) HandleFireSpread(ctx *world.Context, from cube.Pos, to cu
 	if h.fireSpread.EmitResult(WorldFireSpread{
 		From: from,
 		To:   to,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -101,7 +101,7 @@ func (h *worldHandler) HandleFireSpread(ctx *world.Context, from cube.Pos, to cu
 func (h *worldHandler) HandleBlockBurn(ctx *world.Context, pos cube.Pos) {
 	if h.blockBurn.EmitResult(WorldBlockBurn{
 		Pos: pos,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -109,7 +109,7 @@ func (h *worldHandler) HandleBlockBurn(ctx *world.Context, pos cube.Pos) {
 func (h *worldHandler) HandleCropTrample(ctx *world.Context, pos cube.Pos) {
 	if h.cropTrample.EmitResult(WorldCropTrample{
 		Pos: pos,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -117,7 +117,7 @@ func (h *worldHandler) HandleCropTrample(ctx *world.Context, pos cube.Pos) {
 func (h *worldHandler) HandleLeavesDecay(ctx *world.Context, pos cube.Pos) {
 	if h.leavesDecay.EmitResult(WorldLeavesDecay{
 		Pos: pos,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }
@@ -143,7 +143,7 @@ func (h *worldHandler) HandleExplosion(ctx *world.Context, position mgl64.Vec3, 
 		Blocks:         blocks,
 		ItemDropChance: itemDropChance,
 		SpawnFire:      spawnFire,
-	}).WaitCancelled(h.ctx) {
+	}).Wait(h.ctx) {
 		ctx.Cancel()
 	}
 }

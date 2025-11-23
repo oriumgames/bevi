@@ -54,23 +54,10 @@ func (s *store[T]) newEntry(v T, wantDone bool) *entry[T] {
 	return &entry[T]{val: v}
 }
 
-// decAndMaybeClose decrements the pending count and closes done when it hits 0.
-// Uses an atomic state bit to ensure the channel is closed exactly once without sync.Once.
-func (e *entry[T]) decAndMaybeClose() {
-	if e.pending.Add(-1) == 0 {
-		// attempt to mark completed; 0 -> 1 transition closes channel
-		if e.state.CompareAndSwap(0, 1) {
-			if e.done != nil {
-				close(e.done)
-			} else {
-				e.doneMu.Lock()
-				if e.done == nil {
-					e.done = closedCh
-				}
-				e.doneMu.Unlock()
-			}
-		}
-	}
+// dec decrements the pending reader count.
+// Completion is deferred to advance() at frame end.
+func (e *entry[T]) dec() {
+	e.pending.Add(-1)
 }
 
 // markCancelled sets the cancellation flag.
@@ -177,26 +164,26 @@ func (s *store[T]) snapshotEntries() []*entry[T] {
 // Minor perf tweak: reuse slice capacities by slicing to zero length.
 func (s *store[T]) advance() {
 	s.mu.Lock()
+
+	for _, e := range s.readEnt {
+		if e.state.CompareAndSwap(0, 1) {
+			if e.done != nil {
+				close(e.done)
+			} else {
+				e.doneMu.Lock()
+				if e.done == nil {
+					e.done = closedCh
+				}
+				e.doneMu.Unlock()
+			}
+		}
+	}
+
 	s.readEnt, s.writeEnt = s.writeEnt, s.readEnt
 
 	if len(s.writeEnt) > 0 {
-		// release entries from the old read buffer back to pool
 		for i := range s.writeEnt {
 			e := s.writeEnt[i]
-			// ensure completion was signaled; if not, mark as completed
-			if e.state.CompareAndSwap(0, 1) {
-				// defensively signal completion
-				if e.done != nil {
-					close(e.done)
-				} else {
-					e.doneMu.Lock()
-					if e.done == nil {
-						e.done = closedCh
-					}
-					e.doneMu.Unlock()
-				}
-			}
-			// reset large fields to aid GC and put back to pool
 			var zero T
 			e.val = zero
 			s.entryPool.Put(e)
@@ -204,26 +191,4 @@ func (s *store[T]) advance() {
 		s.writeEnt = s.writeEnt[:0]
 	}
 	s.mu.Unlock()
-}
-
-// completeNoReader closes events in the current read buffer that have no pending readers.
-// This enables writers to observe completion in frames where no reader iterates.
-func (s *store[T]) completeNoReader() {
-	entries := s.snapshotEntries()
-	for _, ent := range entries {
-		if ent.pending.Load() == 0 {
-			// If nobody registered, the event is considered complete for this frame.
-			if ent.state.CompareAndSwap(0, 1) {
-				if ent.done != nil {
-					close(ent.done)
-				} else {
-					ent.doneMu.Lock()
-					if ent.done == nil {
-						ent.done = closedCh
-					}
-					ent.doneMu.Unlock()
-				}
-			}
-		}
-	}
 }

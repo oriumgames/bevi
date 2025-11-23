@@ -15,7 +15,9 @@ import (
 )
 
 func main() {
-	conf, err := server.DefaultConfig().Config(slog.Default())
+	cfg := server.DefaultConfig()
+	cfg.Network.Address = ":19135"
+	conf, err := cfg.Config(slog.Default())
 	if err != nil {
 		panic(err)
 	}
@@ -31,7 +33,7 @@ func DenyBlockBreak(
 	w *bevi.World,
 	r bevi.EventReader[dragonfly.PlayerBlockBreak],
 ) {
-	dragonfly.Receive(w, r, func(ev dragonfly.PlayerBlockBreak) bool {
+	dragonfly.Receive(w, &r, func(ev dragonfly.PlayerBlockBreak) bool {
 		ev.Player.Exec(func(tx *world.Tx, p *player.Player) {
 			p.Message("You can't break blocks here.")
 		})
@@ -46,7 +48,7 @@ func WelcomeOnJoin(
 	r bevi.EventReader[dragonfly.PlayerJoin],
 	f *bevi.Filter1[dragonfly.Player],
 ) {
-	dragonfly.Receive(w, r, func(ev dragonfly.PlayerJoin) bool {
+	dragonfly.Receive(w, &r, func(ev dragonfly.PlayerJoin) bool {
 		// Greet the joining player
 		ev.Player.Exec(func(tx *world.Tx, p *player.Player) {
 			p.Message("Welcome to the server! Say \"count\" to see how many players are online.")
@@ -73,7 +75,7 @@ func FarewellOnQuit(
 	r bevi.EventReader[dragonfly.PlayerQuit],
 	f *bevi.Filter1[dragonfly.Player],
 ) {
-	dragonfly.Receive(w, r, func(ev dragonfly.PlayerQuit) bool {
+	dragonfly.Receive(w, &r, func(ev dragonfly.PlayerQuit) bool {
 		// Announce to everyone else
 		q := f.Query()
 		for q.Next() {
@@ -97,7 +99,7 @@ func ChatFilterAndCount(
 ) {
 	const badWord = "badword" // trivial example; replace with your list or smarter checker
 
-	dragonfly.Receive(w, r, func(ev dragonfly.PlayerChat) bool {
+	dragonfly.Receive(w, &r, func(ev dragonfly.PlayerChat) bool {
 		if ev.Message == nil {
 			return true // continue
 		}

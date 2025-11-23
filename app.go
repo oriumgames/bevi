@@ -115,7 +115,6 @@ func (a *App) Run() {
 	a.runStage(ctx, PreStartup)
 	a.runStage(ctx, Startup)
 	a.runStage(ctx, PostStartup)
-	a.events.CompleteNoReader()
 	a.events.Advance()
 
 	for {
@@ -125,7 +124,6 @@ func (a *App) Run() {
 		a.runStage(ctx, PreUpdate)
 		a.runStage(ctx, Update)
 		a.runStage(ctx, PostUpdate)
-		a.events.CompleteNoReader()
 		a.events.Advance()
 	}
 }

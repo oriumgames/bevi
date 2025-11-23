@@ -6,7 +6,6 @@ import (
 	"context"
 
 	"github.com/df-mc/dragonfly/server"
-	"github.com/go-gl/mathgl/mgl64"
 	"github.com/oriumgames/bevi"
 )
 
@@ -39,7 +38,6 @@ func (p *Plugin) Build(app *bevi.App) {
 				for p := range srv.Accept() {
 					p.Handle(h)
 					h.HandleJoin(p)
-					p.Teleport(mgl64.Vec3{0, 14, 0})
 				}
 			}()
 

@@ -2,8 +2,6 @@ package event
 
 import (
 	"context"
-	"runtime"
-	"time"
 )
 
 // Writer appends events to the current frame's write buffer.
@@ -84,58 +82,5 @@ func (r EventResult[T]) Wait(ctx context.Context) bool {
 			return r.ent.cancelled.Load()
 		}
 		return r.ent.cancelled.Load()
-	}
-}
-
-// WaitCancelled returns as soon as either a reader cancels the event, the event completes,
-// or ctx is done. The return value is the current cancellation state.
-// This allows a fast "was it cancelled?" answer while the event may still continue processing.
-func (r EventResult[T]) WaitCancelled(ctx context.Context) bool {
-	if r.ent == nil {
-		return false
-	}
-	// Fast checks.
-	if r.ent.cancelled.Load() {
-		return true
-	}
-	if r.ent.IsDone() {
-		return r.ent.cancelled.Load()
-	}
-
-	// Spin briefly to catch very near-term updates without allocating timers.
-	const spins = 4
-	for range spins {
-		if r.ent.cancelled.Load() {
-			return true
-		}
-		if r.ent.IsDone() {
-			return r.ent.cancelled.Load()
-		}
-		if ctx.Err() != nil {
-			return r.ent.cancelled.Load()
-		}
-		runtime.Gosched()
-	}
-
-	// Fallback to light polling with blocking wait on the completion channel.
-	ticker := time.NewTicker(250 * time.Microsecond)
-	defer ticker.Stop()
-
-	for {
-		if r.ent.cancelled.Load() {
-			return true
-		}
-		if r.ent.IsDone() {
-			return r.ent.cancelled.Load()
-		}
-		done := r.ent.ensureDoneChan()
-		select {
-		case <-ctx.Done():
-			return r.ent.cancelled.Load()
-		case <-done:
-			return r.ent.cancelled.Load()
-		case <-ticker.C:
-			// re-check loop
-		}
 	}
 }

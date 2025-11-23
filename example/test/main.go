@@ -61,7 +61,7 @@ func IncreaseMoney(
 	})
 	go func() {
 		res := writerCancel.EmitResult(CancelEvent{Msg: "please_cancel"})
-		cancelled := res.WaitCancelled(ctx)
+		cancelled := res.Wait(ctx)
 		if cancelled {
 			fmt.Println("emitter: event was cancelled by a reader")
 		} else {
