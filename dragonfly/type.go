@@ -46,8 +46,9 @@ func (p *Player) Handle() *world.EntityHandle {
 }
 
 func (p *Player) Exec(f func(*world.Tx, *player.Player)) <-chan struct{} {
+	h := p.h
 	return p.w.Exec(func(tx *world.Tx) {
-		e, ok := p.h.Entity(tx)
+		e, ok := h.Entity(tx)
 		if !ok {
 			return
 		}
