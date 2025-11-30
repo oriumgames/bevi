@@ -1,5 +1,8 @@
 # dragonfly
 
+> [!WARNING]
+> This plugin has been discontinued in favor of [PECS](https://github.com/oriumgames/pecs)
+
 A Bevi plugin that bridges Dragonfly with the Bevi runtime.
 
 
